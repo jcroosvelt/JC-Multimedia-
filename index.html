@@ -14,6 +14,7 @@
 <meta name="twitter:title" content="JC Multimedia">
 <meta name="twitter:description" content="Boutique et studio à Pétion-Ville et Carrefour, Haïti. Son, image et tech — commandez sur WhatsApp.">
 <meta name="twitter:image" id="twitterImageMeta" content="">
+<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" id="faviconLink" href="">
 <link rel="apple-touch-icon" id="appleTouchIconLink" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -226,9 +227,23 @@ header.site{
 .card:hover{border-color:var(--amber); transform:translateY(-2px); box-shadow:0 8px 20px rgba(11,33,88,.08);}
 .card .thumb{
   aspect-ratio:1/1; display:flex; align-items:center; justify-content:center;
-  position:relative; background:var(--surface2);
+  position:relative; background:var(--surface2); overflow:hidden;
 }
 .card .thumb svg{width:46%; height:46%; color:var(--navy);}
+.card .thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+.no-image{color:var(--muted); font-size:.82rem; text-align:center; padding:10px;}
+.card-title-link{color:inherit; text-decoration:none;}
+.card-title-link:hover{color:var(--amber-deep);}
+
+/* ---------- page détail produit/service ---------- */
+.item-detail-page{max-width:640px;}
+.item-detail-thumb{
+  aspect-ratio:1/1; max-width:420px; border-radius:16px; overflow:hidden;
+  background:var(--surface2); display:flex; align-items:center; justify-content:center;
+  position:relative; margin-bottom:20px;
+}
+.item-detail-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+.item-detail-page h1{font-size:clamp(1.5rem,3vw,2rem); margin:0 0 10px;}
 .promo-flag{
   position:absolute; top:10px; left:10px; background:var(--coral); color:#fff;
   font-size:.65rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
@@ -417,6 +432,13 @@ footer nav a:hover{color:var(--amber);}
 .admin-item-summary:hover{background:var(--surface2);}
 .admin-item-price{font-family:'IBM Plex Mono',monospace; color:var(--navy); font-weight:600; margin-left:auto; margin-right:10px;}
 .admin-item-edit{padding:16px 14px; background:#fff; border-top:1px solid var(--line);}
+.admin-image-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+.admin-image-preview{
+  width:72px; height:72px; border-radius:10px; overflow:hidden; flex-shrink:0;
+  background:var(--surface2); display:flex; align-items:center; justify-content:center;
+  color:var(--muted); font-size:.7rem; text-align:center;
+}
+.admin-image-preview img{width:100%; height:100%; object-fit:cover;}
 .admin-order-card{border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px;}
 .admin-order-head{display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap;}
 
@@ -451,19 +473,19 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ TOP SOCIAL STRIP ============ -->
 <div class="topstrip">
-  <a href="#" title="Instagram" aria-label="Instagram">
+  <a href="https://www.instagram.com/jcmultimediaht?igsi=MXJiNzlyMmp0aXBkaQ==" target="_blank" rel="noopener" title="Instagram" aria-label="Instagram">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>
   </a>
-  <a href="#" title="Facebook" aria-label="Facebook">
+  <a href="https://www.facebook.com/share/1FA67rVSu3/" target="_blank" rel="noopener" title="Facebook" aria-label="Facebook">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 22v-9h3l.5-4H13V6.5c0-1.16.32-1.95 2-1.95H16.5V1.1C16.2 1.07 15.1 1 13.8 1 11 1 9.1 2.7 9.1 5.8V9H6v4h3.1v9h3.9z"/></svg>
   </a>
-  <a href="#" title="TikTok" aria-label="TikTok">
+  <a href="https://tiktok.com/@jc.multimedia" target="_blank" rel="noopener" title="TikTok" aria-label="TikTok">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.8c-1-.7-1.6-1.8-1.7-3.1h-3.1v13.4c0 1.4-1.1 2.5-2.5 2.5s-2.5-1.1-2.5-2.5 1.1-2.5 2.5-2.5c.3 0 .5 0 .8.1V10.5c-.3 0-.5-.1-.8-.1-3 0-5.4 2.4-5.4 5.4S6.7 21.2 9.7 21.2s5.4-2.4 5.4-5.4V9.1c1.2.9 2.6 1.4 4.2 1.4V7.3c-1 0-1.9-.3-2.7-.9"/></svg>
   </a>
-  <a href="#" title="WhatsApp" aria-label="WhatsApp">
+  <a href="https://wa.me/50934432139" target="_blank" rel="noopener" title="WhatsApp" aria-label="WhatsApp">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.6.1-.2.2-.7.8-.8.9-.2.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.4c.1-.1.2-.3.2-.4.1-.2 0-.3 0-.4L9.9 8c-.2-.4-.4-.3-.6-.3h-.5c-.2 0-.4.1-.7.3-.2.2-.9.9-.9 2.1 0 1.2.9 2.4 1 2.6.1.2 1.8 2.8 4.4 3.8.6.3 1.1.4 1.5.5.6.2 1.2.2 1.6.1.5-.1 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1-.1-.1-.2-.2-.4-.3z"/></svg>
   </a>
-  <a href="#" title="Google" aria-label="Google">
+  <a href="https://www.google.com/search?q=JC+Multimedia+Port-au-Prince" target="_blank" rel="noopener" title="Google" aria-label="Google">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4c-.2 1.3-1 2.4-2.1 3.1v2.6h3.4c2-1.8 3.3-4.5 3.3-7.5z"/><path d="M12 22c2.8 0 5.2-.9 6.9-2.5l-3.4-2.6c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H2.7v2.7C4.4 19.6 7.9 22 12 22z"/><path d="M6.2 13.6c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V6.9H2.7A10 10 0 0 0 2 12c0 1.6.4 3.1 1.1 4.4l3.1-2.8z"/><path d="M12 5.8c1.5 0 2.9.5 3.9 1.5l3-3C17.2 2.6 14.8 1.6 12 1.6 7.9 1.6 4.4 4 2.7 6.9l3.5 2.7C7 7.6 9.3 5.8 12 5.8z"/></svg>
   </a>
 </div>
@@ -493,7 +515,7 @@ footer nav a:hover{color:var(--amber);}
 <div class="drawer" id="drawer">
   <button class="drawer-close" onclick="closeDrawer()">✕</button>
   <nav>
-    <a href="#boutique" onclick="closeDrawer(); goHome('boutique'); return false;">Boutique</a>
+    <a href="#" onclick="closeDrawer(); showPage('boutique'); return false;">Boutique</a>
     <a href="#services" onclick="closeDrawer(); goHome('services'); return false;">Services</a>
     <a href="#apropos" onclick="closeDrawer(); goHome('apropos'); return false;">À propos</a>
     <a href="#" onclick="closeDrawer(); showPage('faq'); return false;">FAQ</a>
@@ -508,7 +530,7 @@ footer nav a:hover{color:var(--amber);}
     <h1>Impression, personnalisation, graphisme, brandmark — <em>tout pour vous plaire</em>.</h1>
     <p>Matériels informatiques, matériels de personnalisation, services de création de site web, conception et installation de banderoles (banners), et bien plus. Commandez en quelques clics, finalisez sur WhatsApp.</p>
     <div style="display:flex; gap:12px; flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="document.getElementById('boutique').scrollIntoView({behavior:'smooth'})">Voir la boutique</button>
+      <button class="btn btn-primary" onclick="showPage('boutique')">Voir la boutique</button>
       <a class="btn btn-ghost" href="#services">Nos services</a>
     </div>
   </div>
@@ -518,21 +540,6 @@ footer nav a:hover{color:var(--amber);}
       <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
     </div>
   </div>
-</section>
-
-<!-- ============ PRODUCTS ============ -->
-<section class="section home-section" id="boutique">
-  <div class="section-head">
-    <div>
-      <h2>Boutique</h2>
-      <div class="tag">Produits · en stock</div>
-    </div>
-  </div>
-  <div class="search-bar">
-    <input type="search" id="productSearch" placeholder="Rechercher un produit…" oninput="renderGrid()" aria-label="Rechercher un produit">
-  </div>
-  <div class="grid" id="productGrid"></div>
-  <div class="section-link"><a href="#" onclick="showPage('all-products'); return false;">Voir tous les produits →</a></div>
 </section>
 
 <!-- ============ SERVICES ============ -->
@@ -553,18 +560,18 @@ footer nav a:hover{color:var(--amber);}
 <div id="apropos" class="section home-section" style="padding-top:0;">
   <div class="card" style="padding:26px; background:var(--surface2);">
     <h3 style="margin-top:0;">À propos de JC Multimedia</h3>
-    <p style="color:var(--muted); margin:0; max-width:70ch;">Basé à Port-au-Prince, JC Multimedia équipe particuliers, studios et entreprises en matériel audio, vidéo et informatique, avec un service de commande simple par WhatsApp et un accompagnement technique sur place.</p>
+    <p style="color:var(--muted); margin:0; max-width:70ch;">Basé à Port-au-Prince, JC Multimedia offre des services de branding, graphic design, web design, personnalisation, etc.</p>
   </div>
 </div>
 
-<!-- ============ PAGE: TOUS LES PRODUITS ============ -->
-<section class="section page-section" id="page-all-products" style="display:none;">
+<!-- ============ PAGE: BOUTIQUE ============ -->
+<section class="section page-section" id="page-boutique" style="display:none;">
   <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
-  <h1>Tous les produits</h1>
+  <h1>Boutique</h1>
   <div class="search-bar">
-    <input type="search" id="productSearchAll" placeholder="Rechercher un produit…" oninput="renderGrid()" aria-label="Rechercher un produit">
+    <input type="search" id="productSearch" placeholder="Rechercher un produit…" oninput="renderGrid()" aria-label="Rechercher un produit">
   </div>
-  <div class="grid" id="productGridAll"></div>
+  <div class="grid" id="productGrid"></div>
 </section>
 
 <!-- ============ PAGE: TOUS NOS SERVICES ============ -->
@@ -575,6 +582,12 @@ footer nav a:hover{color:var(--amber);}
     <input type="search" id="serviceSearchAll" placeholder="Rechercher un service…" oninput="renderGrid()" aria-label="Rechercher un service">
   </div>
   <div class="grid" id="serviceGridAll"></div>
+</section>
+
+<!-- ============ PAGE: DÉTAIL PRODUIT / SERVICE ============ -->
+<section class="section page-section item-detail-page" id="page-item-detail" style="display:none;">
+  <a href="#" class="page-back" onclick="window.location.hash=''; showHome(); return false;">← Retour à l'accueil</a>
+  <div id="itemDetailContent"></div>
 </section>
 
 <!-- ============ PAGE: FAQ ============ -->
@@ -711,21 +724,21 @@ footer nav a:hover{color:var(--amber);}
   <div class="footer-in">
     <div>
       <img class="footer-logo" id="footerLogoImg" src="" alt="JC Multimedia — Creative Digital Studio">
-      <p>Produits, équipements et solutions audiovisuelles.</p>
+      <p>Impression, personnalisation, graphisme et solutions digitales.</p>
       <div class="footer-social">
-        <a href="#" title="Instagram" aria-label="Instagram">
+        <a href="https://www.instagram.com/jcmultimediaht?igsi=MXJiNzlyMmp0aXBkaQ==" target="_blank" rel="noopener" title="Instagram" aria-label="Instagram">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>
         </a>
-        <a href="#" title="Facebook" aria-label="Facebook">
+        <a href="https://www.facebook.com/share/1FA67rVSu3/" target="_blank" rel="noopener" title="Facebook" aria-label="Facebook">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 22v-9h3l.5-4H13V6.5c0-1.16.32-1.95 2-1.95H16.5V1.1C16.2 1.07 15.1 1 13.8 1 11 1 9.1 2.7 9.1 5.8V9H6v4h3.1v9h3.9z"/></svg>
         </a>
-        <a href="#" title="TikTok" aria-label="TikTok">
+        <a href="https://tiktok.com/@jc.multimedia" target="_blank" rel="noopener" title="TikTok" aria-label="TikTok">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.8c-1-.7-1.6-1.8-1.7-3.1h-3.1v13.4c0 1.4-1.1 2.5-2.5 2.5s-2.5-1.1-2.5-2.5 1.1-2.5 2.5-2.5c.3 0 .5 0 .8.1V10.5c-.3 0-.5-.1-.8-.1-3 0-5.4 2.4-5.4 5.4S6.7 21.2 9.7 21.2s5.4-2.4 5.4-5.4V9.1c1.2.9 2.6 1.4 4.2 1.4V7.3c-1 0-1.9-.3-2.7-.9"/></svg>
         </a>
-        <a href="#" title="WhatsApp" aria-label="WhatsApp">
+        <a href="https://wa.me/50934432139" target="_blank" rel="noopener" title="WhatsApp" aria-label="WhatsApp">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.6.1-.2.2-.7.8-.8.9-.2.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.4c.1-.1.2-.3.2-.4.1-.2 0-.3 0-.4L9.9 8c-.2-.4-.4-.3-.6-.3h-.5c-.2 0-.4.1-.7.3-.2.2-.9.9-.9 2.1 0 1.2.9 2.4 1 2.6.1.2 1.8 2.8 4.4 3.8.6.3 1.1.4 1.5.5.6.2 1.2.2 1.6.1.5-.1 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1-.1-.1-.2-.2-.4-.3z"/></svg>
         </a>
-        <a href="#" title="Google" aria-label="Google">
+        <a href="https://www.google.com/search?q=JC+Multimedia+Port-au-Prince" target="_blank" rel="noopener" title="Google" aria-label="Google">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4c-.2 1.3-1 2.4-2.1 3.1v2.6h3.4c2-1.8 3.3-4.5 3.3-7.5z"/><path d="M12 22c2.8 0 5.2-.9 6.9-2.5l-3.4-2.6c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H2.7v2.7C4.4 19.6 7.9 22 12 22z"/><path d="M6.2 13.6c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V6.9H2.7A10 10 0 0 0 2 12c0 1.6.4 3.1 1.1 4.4l3.1-2.8z"/><path d="M12 5.8c1.5 0 2.9.5 3.9 1.5l3-3C17.2 2.6 14.8 1.6 12 1.6 7.9 1.6 4.4 4 2.7 6.9l3.5 2.7C7 7.6 9.3 5.8 12 5.8z"/></svg>
         </a>
       </div>
@@ -733,7 +746,7 @@ footer nav a:hover{color:var(--amber);}
     <div>
       <h4>Navigation</h4>
       <nav>
-        <a href="#boutique" onclick="goHome('boutique'); return false;">Boutique</a>
+        <a href="#" onclick="showPage('boutique'); return false;">Boutique</a>
         <a href="#services" onclick="goHome('services'); return false;">Services</a>
         <a href="#apropos" onclick="goHome('apropos'); return false;">À propos</a>
         <a href="#" onclick="showPage('faq'); return false;">FAQ</a>
@@ -895,21 +908,8 @@ const icons = {
    (les modifications admin sont sauvegardées et remplacent ces
    valeurs par défaut sur cet appareil)
    ========================================================= */
-const BASE_PRODUCTS = [
-  {id:"p1", name:"Casque Bluetooth JC-Pro", utility:"Écoute mobile et appels mains libres au quotidien.", price:45, oldPrice:55, icon:"headphones", customizable:false, promo:true, inStock:true},
-  {id:"p2", name:"Enceinte portable 20W", utility:"Sonorisation légère pour petits événements ou usage personnel.", price:38, icon:"speaker", customizable:false, inStock:true},
-  {id:"p3", name:"Caméra action 4K", utility:"Captation de contenu extérieur et sportif en haute définition.", price:89, icon:"camera", customizable:false, inStock:true},
-  {id:"p4", name:"Imprimante multifonction", utility:"Impression, scan et copie pour bureau ou studio.", price:150, icon:"printer", customizable:false, inStock:true},
-  {id:"p5", name:"Clé USB 64 Go gravée", utility:"Stockage et transfert de fichiers, personnalisable à votre logo.", price:12, icon:"drive", customizable:true, inStock:true},
-  {id:"p6", name:"Moniteur 24'' Full HD", utility:"Écran secondaire pour le montage, le design ou la bureautique.", price:130, icon:"monitor", customizable:false, inStock:true},
-  {id:"p7", name:"Micro studio USB", utility:"Enregistrement voix et podcast en qualité studio.", price:55, icon:"mic", customizable:false, inStock:true},
-  {id:"p8", name:"Coque téléphone personnalisée", utility:"Protection du téléphone avec un design à votre image.", price:15, icon:"phonecase", customizable:true, inStock:true}
-];
-const BASE_SERVICES = [
-  {id:"s1", name:"Montage audio & vidéo", description:"Montage, étalonnage et mixage pour clips, événements et publicités.", icon:"videoedit", startingPrice:60},
-  {id:"s2", name:"Installation sonorisation", description:"Configuration de systèmes de son pour salles, églises et événements.", icon:"install", startingPrice:120},
-  {id:"s3", name:"Gravure & personnalisation", description:"Impression et gravure sur accessoires, coques et supports.", icon:"engrave", startingPrice:15}
-];
+const BASE_PRODUCTS = [];
+const BASE_SERVICES = [];
 
 function loadCatalogLocal(){
   const stored = safeGet(CATALOG_STORAGE_KEY);
@@ -922,7 +922,7 @@ let CATALOG = loadCatalogLocal();
 /* ---- Mapping Supabase (table catalog_items) <-> objets JS ---- */
 function rowToItem(row){
   const item = {
-    id: row.id, name: row.name, icon: row.icon,
+    id: row.id, name: row.name, imageUrl: row.image_url || "",
     inStock: row.in_stock, customizable: row.customizable, promo: row.promo
   };
   if(row.kind === 'services'){
@@ -937,7 +937,7 @@ function rowToItem(row){
 }
 function itemToRow(kind, item){
   return {
-    id: item.id, kind, name: item.name, icon: item.icon,
+    id: item.id, kind, name: item.name, image_url: item.imageUrl || null,
     utility: item.utility ?? null, description: item.description ?? null,
     price: kind === 'products' ? (item.price ?? 0) : null,
     old_price: kind === 'products' ? (item.oldPrice ?? null) : null,
@@ -949,10 +949,12 @@ async function fetchCatalogFromSupabase(){
   if(!SUPABASE_ENABLED) return null;
   try{
     const { data, error } = await db.from('catalog_items').select('*').order('sort_order', { ascending: true });
-    if(error || !data) throw error || new Error('no data');
-    const products = data.filter(r => r.kind === 'products').map(rowToItem);
-    const services = data.filter(r => r.kind === 'services').map(rowToItem);
-    if(products.length === 0 && services.length === 0) return null; // table vide -> on garde les valeurs par défaut
+    if(error) throw error;
+    const products = (data || []).filter(r => r.kind === 'products').map(rowToItem);
+    const services = (data || []).filter(r => r.kind === 'services').map(rowToItem);
+    // Un catalogue VIDE est un état légitime (rien n'a encore été ajouté depuis
+    // l'admin) — ce n'est pas une erreur, donc on ne retombe pas sur de fausses
+    // données de démonstration dans ce cas.
     return { products, services };
   }catch(e){
     console.warn('Supabase catalog fetch failed, using local cache/defaults:', e);
@@ -967,6 +969,7 @@ async function refreshCatalog(){
   }
   rebuildIndex();
   renderGrid();
+  handleRoute();
 }
 
 let ALL_ITEMS = {};
@@ -1010,13 +1013,13 @@ function cardHTML(item){
        </div>`;
   return `
     <div class="card">
-      <div class="thumb" onclick="showQuickView('${item.id}')" role="button" tabindex="0" aria-label="Voir le détail de ${item.name}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showQuickView('${item.id}');}">
+      <div class="thumb" onclick="goToItem('${item.id}')" role="button" tabindex="0" aria-label="Voir la page de ${item.name}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goToItem('${item.id}');}">
         ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
         ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
-        ${icons[item.icon] || ''}
+        ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
       </div>
       <div class="body">
-        <h3>${item.name}</h3>
+        <h3><a href="#item-${item.id}" onclick="goToItem('${item.id}'); return false;" class="card-title-link">${item.name}</a></h3>
         ${subText ? `<p class="card-sub">${subText}</p>` : ''}
         ${priceBlock}
         <div class="qty-row">
@@ -1033,28 +1036,27 @@ function renderGrid(){
   const sTerm = (document.getElementById('serviceSearch')?.value || '').toLowerCase().trim();
   const filteredProducts = CATALOG.products.filter(p => !pTerm || p.name.toLowerCase().includes(pTerm));
   const filteredServices = CATALOG.services.filter(s => !sTerm || s.name.toLowerCase().includes(sTerm));
-  document.getElementById('productGrid').innerHTML = filteredProducts.length
-    ? filteredProducts.map(cardHTML).join('')
-    : '<p class="card-sub">Aucun produit ne correspond à votre recherche.</p>';
-  document.getElementById('serviceGrid').innerHTML = filteredServices.length
-    ? filteredServices.map(cardHTML).join('')
-    : '<p class="card-sub">Aucun service ne correspond à votre recherche.</p>';
 
-  const pAllGrid = document.getElementById('productGridAll');
-  const sAllGrid = document.getElementById('serviceGridAll');
-  if(pAllGrid){
-    const pAllTerm = (document.getElementById('productSearchAll')?.value || '').toLowerCase().trim();
-    const filteredAllProducts = CATALOG.products.filter(p => !pAllTerm || p.name.toLowerCase().includes(pAllTerm));
-    pAllGrid.innerHTML = filteredAllProducts.length
-      ? filteredAllProducts.map(cardHTML).join('')
-      : '<p class="card-sub">Aucun produit ne correspond à votre recherche.</p>';
+  const productGrid = document.getElementById('productGrid');
+  if(productGrid){
+    productGrid.innerHTML = filteredProducts.length
+      ? filteredProducts.map(cardHTML).join('')
+      : `<p class="card-sub">${CATALOG.products.length === 0 ? "La boutique sera bientôt garnie — revenez vite !" : "Aucun produit ne correspond à votre recherche."}</p>`;
   }
+  const serviceGrid = document.getElementById('serviceGrid');
+  if(serviceGrid){
+    serviceGrid.innerHTML = filteredServices.length
+      ? filteredServices.map(cardHTML).join('')
+      : `<p class="card-sub">${CATALOG.services.length === 0 ? "Nos services seront bientôt détaillés ici — revenez vite !" : "Aucun service ne correspond à votre recherche."}</p>`;
+  }
+
+  const sAllGrid = document.getElementById('serviceGridAll');
   if(sAllGrid){
     const sAllTerm = (document.getElementById('serviceSearchAll')?.value || '').toLowerCase().trim();
     const filteredAllServices = CATALOG.services.filter(s => !sAllTerm || s.name.toLowerCase().includes(sAllTerm));
     sAllGrid.innerHTML = filteredAllServices.length
       ? filteredAllServices.map(cardHTML).join('')
-      : '<p class="card-sub">Aucun service ne correspond à votre recherche.</p>';
+      : `<p class="card-sub">${CATALOG.services.length === 0 ? "Nos services seront bientôt détaillés ici — revenez vite !" : "Aucun service ne correspond à votre recherche."}</p>`;
   }
 }
 function stepQty(id, delta){
@@ -1093,9 +1095,25 @@ function showToast(msg){
 }
 
 /* =========================================================
-   QUICK VIEW — aperçu détaillé d'un article
+   PAGE PRODUIT / SERVICE — chaque article a sa propre page,
+   avec un lien partageable (#item-ID dans l'URL)
    ========================================================= */
-function showQuickView(id){
+function goToItem(id){
+  window.location.hash = 'item-' + id;
+}
+function handleRoute(){
+  const hash = window.location.hash || '';
+  if(hash.startsWith('#item-')){
+    const id = hash.slice(6);
+    if(ALL_ITEMS[id]){
+      renderItemDetail(id);
+      return;
+    }
+  }
+}
+window.addEventListener('hashchange', handleRoute);
+
+function renderItemDetail(id){
   const item = ALL_ITEMS[id];
   if(!item) return;
   const subText = item.utility || item.description || "";
@@ -1103,24 +1121,37 @@ function showQuickView(id){
   const priceBlock = isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
     : `<div class="price-row"><span class="price">${priceDualInline(item.price)}</span>${item.oldPrice ? `<span class="price-old">$${item.oldPrice.toFixed(2)}</span>` : ''}</div>`;
-  openStep(`
-    <div class="quickview">
-      <div class="thumb qv-thumb">
-        ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
-        ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
-        ${icons[item.icon] || ''}
-      </div>
-      <h3 style="margin-right:0;">${item.name}</h3>
-      ${subText ? `<p class="card-sub">${subText}</p>` : ''}
-      ${priceBlock}
-      <div class="qty-row">
-        <button class="qty-btn" onclick="stepQty('${id}',-1)" aria-label="Diminuer la quantité">−</button>
-        <span class="qty-val" data-qty-display="${id}">${uiQty[id]}</span>
-        <button class="qty-btn" onclick="stepQty('${id}',1)" aria-label="Augmenter la quantité">+</button>
-      </div>
-      <button class="add-btn" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${id}'); closeStep();">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
+
+  document.getElementById('itemDetailContent').innerHTML = `
+    <div class="item-detail-thumb">
+      ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
+      ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
+      ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}">` : `<div class="no-image">Pas de photo</div>`}
     </div>
-  `, item.name);
+    <h1>${item.name}</h1>
+    ${subText ? `<p class="card-sub" style="font-size:1rem;">${subText}</p>` : ''}
+    ${priceBlock}
+    <div class="qty-row">
+      <button class="qty-btn" onclick="stepQty('${id}',-1)" aria-label="Diminuer la quantité">−</button>
+      <span class="qty-val" data-qty-display="${id}">${uiQty[id]}</span>
+      <button class="qty-btn" onclick="stepQty('${id}',1)" aria-label="Augmenter la quantité">+</button>
+    </div>
+    <button class="add-btn" style="max-width:280px;" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
+    <button class="btn btn-ghost" style="margin-top:12px;" onclick="copyItemLink('${id}')">Copier le lien de cette page</button>
+  `;
+  document.querySelectorAll('.home-section').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.page-section').forEach(el => el.style.display = 'none');
+  document.getElementById('page-item-detail').style.display = 'block';
+  window.scrollTo({top:0, behavior:'auto'});
+  closeDrawer();
+}
+function copyItemLink(id){
+  const url = window.location.origin + window.location.pathname + '#item-' + id;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(url).then(()=> showToast("Lien copié !"));
+  } else {
+    showToast(url);
+  }
 }
 
 /* =========================================================
@@ -1145,6 +1176,7 @@ function closeDrawer(){
    NAVIGATION — accueil vs pages statiques (FAQ / légal / admin)
    ========================================================= */
 function showPage(id){
+  if(window.location.hash.startsWith('#item-')) history.replaceState(null, '', window.location.pathname + window.location.search);
   document.querySelectorAll('.home-section').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.page-section').forEach(el => el.style.display = 'none');
   const target = document.getElementById('page-' + id);
@@ -1154,6 +1186,7 @@ function showPage(id){
   if(id === 'admin') checkAdminSession();
 }
 function showHome(){
+  if(window.location.hash.startsWith('#item-')) history.replaceState(null, '', window.location.pathname + window.location.search);
   document.querySelectorAll('.page-section').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.home-section').forEach(el => el.style.display = '');
 }
@@ -1596,9 +1629,6 @@ function renderAdminItemList(kind){
   const container = document.getElementById(kind==='products' ? 'adminProductsList' : 'adminServicesList');
   container.innerHTML = CATALOG[kind].map(item => adminItemRowHTML(kind, item)).join('') || '<p class="card-sub">Aucun article.</p>';
 }
-function iconOptionsHTML(selected){
-  return Object.keys(icons).map(k => `<option value="${k}" ${selected===k?'selected':''}>${k}</option>`).join('');
-}
 function adminItemRowHTML(kind, item){
   const isService = kind === 'services';
   const rawPrice = isService ? (item.startingPrice ?? null) : (item.price ?? 0);
@@ -1613,7 +1643,13 @@ function adminItemRowHTML(kind, item){
     <div class="admin-item-edit" id="adminedit-${item.id}" style="display:none;">
       <div class="form-field"><label>Nom</label><input type="text" id="f-name-${item.id}" value="${(item.name||'').replace(/"/g,'&quot;')}"></div>
       <div class="form-field"><label>${isService?'Description':'Utilité'}</label><input type="text" id="f-desc-${item.id}" value="${((item.utility||item.description)||'').replace(/"/g,'&quot;')}"></div>
-      <div class="form-field"><label>Icône</label><select id="f-icon-${item.id}">${iconOptionsHTML(item.icon)}</select></div>
+      <div class="form-field">
+        <label>Photo</label>
+        <div class="admin-image-row">
+          <div class="admin-image-preview" id="f-imgpreview-${item.id}">${item.imageUrl ? `<img src="${item.imageUrl}" alt="">` : '<span>Pas de photo</span>'}</div>
+          <input type="file" accept="image/*" id="f-image-${item.id}" onchange="previewAdminImage('${item.id}')">
+        </div>
+      </div>
       ${isService ? `
         <div class="form-field"><label>Prix de départ ($)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.startingPrice ?? 0}"></div>
       ` : `
@@ -1633,12 +1669,29 @@ function toggleAdminEdit(id){
   const el = document.getElementById('adminedit-'+id);
   el.style.display = (el.style.display === 'none') ? 'block' : 'none';
 }
+function previewAdminImage(id){
+  const input = document.getElementById('f-image-'+id);
+  const preview = document.getElementById('f-imgpreview-'+id);
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { preview.innerHTML = `<img src="${e.target.result}" alt="">`; };
+  reader.readAsDataURL(file);
+}
+async function uploadItemImage(id, file){
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${id}-${Date.now()}.${ext}`;
+  const { error } = await db.storage.from('catalog-images').upload(path, file, { upsert: true });
+  if(error) throw error;
+  const { data } = db.storage.from('catalog-images').getPublicUrl(path);
+  return data.publicUrl;
+}
 async function adminSaveItem(kind, id){
   const item = CATALOG[kind].find(i => i.id === id);
   if(!item) return;
+  const btn = document.getElementById('save-'+id);
   item.name = document.getElementById('f-name-'+id).value.trim();
   const desc = document.getElementById('f-desc-'+id).value.trim();
-  item.icon = document.getElementById('f-icon-'+id).value;
   if(kind === 'services'){
     item.description = desc;
     item.startingPrice = parseFloat(document.getElementById('f-price-'+id).value) || 0;
@@ -1652,10 +1705,15 @@ async function adminSaveItem(kind, id){
     item.customizable = document.getElementById('f-custom-'+id).checked;
   }
 
+  const fileInput = document.getElementById('f-image-'+id);
+  const file = fileInput.files && fileInput.files[0];
+
   if(SUPABASE_ENABLED){
-    const btn = document.getElementById('save-'+id);
     if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
     try{
+      if(file){
+        item.imageUrl = await uploadItemImage(id, file);
+      }
       const { error } = await db.from('catalog_items').upsert(itemToRow(kind, item));
       if(error) throw error;
     }catch(e){
@@ -1663,6 +1721,8 @@ async function adminSaveItem(kind, id){
       console.error(e);
     }
     if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  } else if(file){
+    showToast("L'envoi de photo nécessite que Supabase soit configuré.");
   }
   saveCatalogLocal();
   rebuildIndex();
@@ -1691,8 +1751,8 @@ async function adminDeleteItem(kind, id){
 async function adminAddItem(kind){
   const id = 'item_' + Date.now();
   const base = kind === 'services'
-    ? { id, name:"Nouveau service", description:"Description à compléter.", icon:"videoedit", startingPrice:0 }
-    : { id, name:"Nouveau produit", utility:"Utilité à compléter.", icon:"headphones", price:0, customizable:false, inStock:true };
+    ? { id, name:"Nouveau service", description:"Description à compléter.", startingPrice:0 }
+    : { id, name:"Nouveau produit", utility:"Utilité à compléter.", price:0, customizable:false, inStock:true };
   CATALOG[kind].push(base);
   uiQty[id] = 1;
   if(SUPABASE_ENABLED){
@@ -1879,6 +1939,7 @@ function adminChangePassword(){
    ========================================================= */
 renderGrid();
 updateBadge();
+handleRoute(); // affiche directement la page produit/service si l'URL contient un lien #item-...
 
 const emailField = document.getElementById('adminEmailField');
 if(emailField) emailField.style.display = SUPABASE_ENABLED ? 'block' : 'none';
