@@ -3,18 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JC Multimedia — Produits, équipements & solutions audiovisuelles</title>
-<meta name="description" content="JC Multimedia — boutique et studio à Pétion-Ville et Carrefour, Haïti. Casques, enceintes, caméras, imprimantes, accessoires, montage audio/vidéo, installation sonorisation et gravure. Commandez en ligne, finalisez sur WhatsApp.">
+<title>JC Multimedia — Impression, personnalisation, graphisme & solutions digitales</title>
+<meta name="description" content="JC Multimedia — studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding, web design et bien plus. Commandez en ligne, finalisez sur WhatsApp.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="JC Multimedia">
-<meta property="og:title" content="JC Multimedia — Produits, équipements & solutions audiovisuelles">
-<meta property="og:description" content="Boutique et studio à Pétion-Ville et Carrefour, Haïti. Son, image et tech — commandez en quelques clics, finalisez sur WhatsApp.">
+<meta property="og:title" content="JC Multimedia — Impression, personnalisation, graphisme & solutions digitales">
+<meta property="og:description" content="Studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding et web design — commandez en quelques clics, finalisez sur WhatsApp.">
 <meta property="og:image" id="ogImageMeta" content="">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JC Multimedia">
-<meta name="twitter:description" content="Boutique et studio à Pétion-Ville et Carrefour, Haïti. Son, image et tech — commandez sur WhatsApp.">
+<meta name="twitter:description" content="Studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding et web design — commandez sur WhatsApp.">
 <meta name="twitter:image" id="twitterImageMeta" content="">
-<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" id="faviconLink" href="">
 <link rel="apple-touch-icon" id="appleTouchIconLink" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -451,13 +450,13 @@ footer nav a:hover{color:var(--amber);}
   a{color:#000; text-decoration:none;}
 }
 </style>
-<link rel="canonical" href="https://www.jcmultimedia.com/">
+<link rel="canonical" href="https://jc-multimedia.vercel.app/">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "ElectronicsStore",
+  "@type": "LocalBusiness",
   "name": "JC Multimedia",
-  "description": "Boutique et studio multimédia à Pétion-Ville et Carrefour, Haïti. Vente d'équipements audio/vidéo et services de montage, installation sonorisation, gravure. Deuxième point de vente : 10, Brochette 99, Carrefour.",
+  "description": "Studio créatif basé à Port-au-Prince, Haïti — impression, personnalisation, graphisme, branding, web design. Deuxième point de vente : 10, Brochette 99, Carrefour.",
   "telephone": "+509 34 43 2139",
   "priceRange": "$$",
   "address": {
@@ -515,10 +514,10 @@ footer nav a:hover{color:var(--amber);}
 <div class="drawer" id="drawer">
   <button class="drawer-close" onclick="closeDrawer()">✕</button>
   <nav>
-    <a href="#" onclick="closeDrawer(); showPage('boutique'); return false;">Boutique</a>
+    <a href="/boutique" onclick="closeDrawer(); event.preventDefault(); showPage('boutique');">Boutique</a>
     <a href="#services" onclick="closeDrawer(); goHome('services'); return false;">Services</a>
     <a href="#apropos" onclick="closeDrawer(); goHome('apropos'); return false;">À propos</a>
-    <a href="#" onclick="closeDrawer(); showPage('faq'); return false;">FAQ</a>
+    <a href="/faq" onclick="closeDrawer(); event.preventDefault(); showPage('faq');">FAQ</a>
     <a href="#contact" onclick="closeDrawer()">Contact</a>
   </nav>
 </div>
@@ -554,7 +553,7 @@ footer nav a:hover{color:var(--amber);}
     <input type="search" id="serviceSearch" placeholder="Rechercher un service…" oninput="renderGrid()" aria-label="Rechercher un service">
   </div>
   <div class="grid" id="serviceGrid"></div>
-  <div class="section-link"><a href="#" onclick="showPage('all-services'); return false;">Tous nos services →</a></div>
+  <div class="section-link"><a href="/services" onclick="event.preventDefault(); showPage('services');">Tous nos services →</a></div>
 </section>
 
 <div id="apropos" class="section home-section" style="padding-top:0;">
@@ -566,7 +565,7 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: BOUTIQUE ============ -->
 <section class="section page-section" id="page-boutique" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Boutique</h1>
   <div class="search-bar">
     <input type="search" id="productSearch" placeholder="Rechercher un produit…" oninput="renderGrid()" aria-label="Rechercher un produit">
@@ -576,7 +575,7 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: TOUS NOS SERVICES ============ -->
 <section class="section page-section" id="page-all-services" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Tous nos services</h1>
   <div class="search-bar">
     <input type="search" id="serviceSearchAll" placeholder="Rechercher un service…" oninput="renderGrid()" aria-label="Rechercher un service">
@@ -586,13 +585,13 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: DÉTAIL PRODUIT / SERVICE ============ -->
 <section class="section page-section item-detail-page" id="page-item-detail" style="display:none;">
-  <a href="#" class="page-back" onclick="window.location.hash=''; showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <div id="itemDetailContent"></div>
 </section>
 
 <!-- ============ PAGE: FAQ ============ -->
 <section class="section page-section" id="page-faq" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Foire aux questions</h1>
 
   <details class="faq-item" open>
@@ -623,7 +622,7 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: POLITIQUE DE CONFIDENTIALITÉ ============ -->
 <section class="section page-section" id="page-confidentialite" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Politique de confidentialité</h1>
   <p>JC Multimedia respecte votre vie privée. Cette page explique quelles informations sont collectées lorsque vous utilisez ce site et comment elles sont traitées.</p>
 
@@ -642,7 +641,7 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: CONDITIONS GÉNÉRALES ============ -->
 <section class="section page-section" id="page-conditions" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Conditions générales de vente</h1>
 
   <h3>Commandes</h3>
@@ -663,7 +662,7 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: LIVRAISON & RETOURS ============ -->
 <section class="section page-section" id="page-livraison" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Livraison &amp; retours</h1>
 
   <h3>Zones de livraison</h3>
@@ -685,7 +684,7 @@ footer nav a:hover{color:var(--amber);}
 
 <!-- ============ PAGE: ADMIN ============ -->
 <section class="section page-section" id="page-admin" style="display:none;">
-  <a href="#" class="page-back" onclick="showHome(); return false;">← Retour à l'accueil</a>
+  <a href="/" class="page-back" onclick="event.preventDefault(); showHome();">← Retour à l'accueil</a>
   <h1>Espace admin</h1>
 
   <div id="adminLogin">
@@ -746,10 +745,10 @@ footer nav a:hover{color:var(--amber);}
     <div>
       <h4>Navigation</h4>
       <nav>
-        <a href="#" onclick="showPage('boutique'); return false;">Boutique</a>
+        <a href="/boutique" onclick="event.preventDefault(); showPage('boutique');">Boutique</a>
         <a href="#services" onclick="goHome('services'); return false;">Services</a>
         <a href="#apropos" onclick="goHome('apropos'); return false;">À propos</a>
-        <a href="#" onclick="showPage('faq'); return false;">FAQ</a>
+        <a href="/faq" onclick="event.preventDefault(); showPage('faq');">FAQ</a>
         <a href="#contact">Contact</a>
       </nav>
     </div>
@@ -766,10 +765,10 @@ footer nav a:hover{color:var(--amber);}
   </div>
   <div class="footer-bottom">
     <div class="footer-legal">
-      <a href="#" onclick="showPage('confidentialite'); return false;">Politique de confidentialité</a>
-      <a href="#" onclick="showPage('conditions'); return false;">Conditions générales</a>
-      <a href="#" onclick="showPage('livraison'); return false;">Livraison &amp; retours</a>
-      <a href="#" onclick="showPage('admin'); return false;" style="opacity:.55;">Admin</a>
+      <a href="/confidentialite" onclick="event.preventDefault(); showPage('confidentialite');">Politique de confidentialité</a>
+      <a href="/conditions" onclick="event.preventDefault(); showPage('conditions');">Conditions générales</a>
+      <a href="/livraison" onclick="event.preventDefault(); showPage('livraison');">Livraison &amp; retours</a>
+      <a href="/admin" onclick="event.preventDefault(); showPage('admin');" style="opacity:.55;">Admin</a>
     </div>
     © 2026 JC Multimedia. Tous droits réservés.
   </div>
@@ -1019,7 +1018,7 @@ function cardHTML(item){
         ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
       </div>
       <div class="body">
-        <h3><a href="#item-${item.id}" onclick="goToItem('${item.id}'); return false;" class="card-title-link">${item.name}</a></h3>
+        <h3><a href="/article/${item.id}" onclick="event.preventDefault(); goToItem('${item.id}');" class="card-title-link">${item.name}</a></h3>
         ${subText ? `<p class="card-sub">${subText}</p>` : ''}
         ${priceBlock}
         <div class="qty-row">
@@ -1095,23 +1094,48 @@ function showToast(msg){
 }
 
 /* =========================================================
-   PAGE PRODUIT / SERVICE — chaque article a sa propre page,
-   avec un lien partageable (#item-ID dans l'URL)
+   ROUTAGE — chaque page a sa propre URL réelle (/boutique, /faq,
+   /article/ID...), gérée avec l'API History du navigateur.
+   Nécessite le fichier vercel.json fourni (redirige toutes les
+   URLs vers index.html) pour fonctionner au rechargement direct.
    ========================================================= */
+const PAGE_ROUTES = {
+  '/boutique': 'boutique',
+  '/services': 'all-services',
+  '/faq': 'faq',
+  '/confidentialite': 'confidentialite',
+  '/conditions': 'conditions',
+  '/livraison': 'livraison',
+  '/admin': 'admin'
+};
+
+function navigateTo(path){
+  if(window.location.pathname !== path){
+    try{ history.pushState({}, '', path); }catch(e){ console.warn('pushState indisponible dans ce contexte:', e); }
+  }
+  handleRoute();
+}
 function goToItem(id){
-  window.location.hash = 'item-' + id;
+  navigateTo('/article/' + id);
 }
 function handleRoute(){
-  const hash = window.location.hash || '';
-  if(hash.startsWith('#item-')){
-    const id = hash.slice(6);
-    if(ALL_ITEMS[id]){
-      renderItemDetail(id);
-      return;
-    }
+  const path = window.location.pathname;
+  const itemMatch = path.match(/^\/article\/(.+)$/);
+  if(itemMatch){
+    const id = decodeURIComponent(itemMatch[1]);
+    if(ALL_ITEMS[id]){ renderItemDetail(id); return; }
+    displayHome();
+    return;
   }
+  if(PAGE_ROUTES[path]){
+    displayPage(PAGE_ROUTES[path]);
+    if(path === '/admin') checkAdminSession();
+    return;
+  }
+  displayHome();
 }
-window.addEventListener('hashchange', handleRoute);
+window.addEventListener('popstate', handleRoute);
+
 
 function renderItemDetail(id){
   const item = ALL_ITEMS[id];
@@ -1146,7 +1170,7 @@ function renderItemDetail(id){
   closeDrawer();
 }
 function copyItemLink(id){
-  const url = window.location.origin + window.location.pathname + '#item-' + id;
+  const url = window.location.origin + '/article/' + id;
   if(navigator.clipboard){
     navigator.clipboard.writeText(url).then(()=> showToast("Lien copié !"));
   } else {
@@ -1174,19 +1198,25 @@ function closeDrawer(){
 
 /* =========================================================
    NAVIGATION — accueil vs pages statiques (FAQ / légal / admin)
+   showPage()/showHome() changent l'URL réelle ; navigateTo()
+   met à jour l'historique du navigateur puis affiche la page,
+   pour que précédent/suivant et le rechargement fonctionnent.
    ========================================================= */
-function showPage(id){
-  if(window.location.hash.startsWith('#item-')) history.replaceState(null, '', window.location.pathname + window.location.search);
+function showPage(slug){
+  navigateTo('/' + slug);
+}
+function showHome(){
+  navigateTo('/');
+}
+function displayPage(id){
   document.querySelectorAll('.home-section').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.page-section').forEach(el => el.style.display = 'none');
   const target = document.getElementById('page-' + id);
   if(target){ target.style.display = 'block'; }
   window.scrollTo({top:0, behavior:'auto'});
   closeDrawer();
-  if(id === 'admin') checkAdminSession();
 }
-function showHome(){
-  if(window.location.hash.startsWith('#item-')) history.replaceState(null, '', window.location.pathname + window.location.search);
+function displayHome(){
   document.querySelectorAll('.page-section').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.home-section').forEach(el => el.style.display = '');
 }
