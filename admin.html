@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JC Multimedia — Impression, personnalisation, graphisme & solutions digitales</title>
-<meta name="description" content="JC Multimedia — studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding, web design et bien plus. Commandez en ligne, finalisez sur WhatsApp.">
+<title>Espace admin — JC Multimedia</title>
+<meta name="description" content="Espace d'administration JC Multimedia.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="JC Multimedia">
-<meta property="og:title" content="JC Multimedia — Impression, personnalisation, graphisme & solutions digitales">
-<meta property="og:description" content="JC Multimedia — studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding, web design et bien plus. Commandez en ligne, finalisez sur WhatsApp.">
+<meta property="og:title" content="Espace admin — JC Multimedia">
+<meta property="og:description" content="Espace d'administration JC Multimedia.">
 <meta property="og:image" id="ogImageMeta" content="">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JC Multimedia">
-<meta name="twitter:description" content="JC Multimedia — studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding, web design et bien plus. Commandez en ligne, finalisez sur WhatsApp.">
+<meta name="twitter:description" content="Espace d'administration JC Multimedia.">
 <meta name="twitter:image" id="twitterImageMeta" content="">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" id="faviconLink" href="">
 <link rel="apple-touch-icon" id="appleTouchIconLink" href="">
-<link rel="canonical" id="canonicalLink" href="https://jc-multimedia.vercel.app/">
+<link rel="canonical" id="canonicalLink" href="https://jc-multimedia.vercel.app/admin">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -39,7 +39,7 @@
 <link rel="stylesheet" href="/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
-<body data-page="home">
+<body data-page="admin">
 
 <div class="topstrip">
   <a href="https://www.instagram.com/jcmultimediaht?igsi=MXJiNzlyMmp0aXBkaQ==" target="_blank" rel="noopener" title="Instagram" aria-label="Instagram">
@@ -90,44 +90,40 @@
   </nav>
 </div>
 
-<section class="hero">
-  <div>
-    <div class="eyebrow">Port-au-Prince</div>
-    <h1>Impression, personnalisation, graphisme, brandmark — <em>tout pour vous plaire</em>.</h1>
-    <p>Matériels informatiques, matériels de personnalisation, services de création de site web, conception et installation de banderoles (banners), et bien plus. Commandez en quelques clics, finalisez sur WhatsApp.</p>
-    <div style="display:flex; gap:12px; flex-wrap:wrap;">
-      <a class="btn btn-primary" href="/boutique">Voir la boutique</a>
-      <a class="btn btn-ghost" href="#services">Nos services</a>
+<section class="section page-section">
+  <a href="/" class="page-back">← Retour à l'accueil</a>
+  <h1>Espace admin</h1>
+
+  <div id="adminLogin">
+    <p class="card-sub">Accès réservé à l'équipe JC Multimedia.</p>
+    <div class="form-field" id="adminEmailField" style="display:none;">
+      <label for="adminEmailInput">Email</label>
+      <input type="email" id="adminEmailInput" autocomplete="username" onkeydown="if(event.key==='Enter') attemptAdminLogin()">
     </div>
+    <div class="form-field">
+      <label for="adminPwInput">Mot de passe</label>
+      <input type="password" id="adminPwInput" autocomplete="current-password" onkeydown="if(event.key==='Enter') attemptAdminLogin()">
+    </div>
+    <p id="adminLoginError" class="form-error" style="display:none;">Mot de passe incorrect.</p>
+    <button class="btn btn-primary" onclick="attemptAdminLogin()">Se connecter</button>
   </div>
-  <div class="hero-visual">
-    <div class="badge-big"><img id="heroBadgeImg" src="" alt="JC Multimedia"></div>
-    <div class="bigeq" aria-hidden="true">
-      <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+
+  <div id="adminPanel" style="display:none;">
+    <div class="admin-tabs">
+      <button class="admin-tab active" data-tab="dashboard" onclick="showAdminTab('dashboard')">Tableau de bord</button>
+      <button class="admin-tab" data-tab="catalog" onclick="showAdminTab('catalog')">Catalogue</button>
+      <button class="admin-tab" data-tab="orders" onclick="showAdminTab('orders')">Commandes</button>
+      <button class="admin-tab" data-tab="settings" onclick="showAdminTab('settings')">Réglages</button>
     </div>
+
+    <div id="adminTab-dashboard" class="admin-tab-panel"></div>
+    <div id="adminTab-catalog" class="admin-tab-panel" style="display:none;"></div>
+    <div id="adminTab-orders" class="admin-tab-panel" style="display:none;"></div>
+    <div id="adminTab-settings" class="admin-tab-panel" style="display:none;"></div>
+
+    <button class="btn btn-ghost" onclick="adminLogout()" style="margin-top:24px;">Se déconnecter</button>
   </div>
 </section>
-
-<section class="section" id="services">
-  <div class="section-head">
-    <div>
-      <h2>Nos services</h2>
-      <div class="tag">Studio JC · sur devis</div>
-    </div>
-  </div>
-  <div class="search-bar">
-    <input type="search" id="serviceSearch" placeholder="Rechercher un service…" oninput="renderGrid()" aria-label="Rechercher un service">
-  </div>
-  <div class="grid" id="serviceGrid"></div>
-  <div class="section-link"><a href="/services">Tous nos services →</a></div>
-</section>
-
-<div id="apropos" class="section" style="padding-top:0;">
-  <div class="card" style="padding:26px; background:var(--surface2);">
-    <h3 style="margin-top:0;">À propos de JC Multimedia</h3>
-    <p style="color:var(--muted); margin:0; max-width:70ch;">Basé à Port-au-Prince, JC Multimedia offre des services de branding, graphic design, web design, personnalisation, etc.</p>
-  </div>
-</div>
 
 <footer id="contact">
   <div class="footer-in">

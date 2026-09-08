@@ -1,5 +1,7 @@
 {
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
-    { "source": "/((?!favicon.ico|robots.txt|sitemap.xml).*)", "destination": "/index.html" }
+    { "source": "/article/:id", "destination": "/article.html" }
   ]
 }
