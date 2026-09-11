@@ -92,6 +92,74 @@ async function refreshSettings(){
 }
 
 /* =========================================================
+   CONTENU DU SITE — textes, coordonnées, réseaux sociaux,
+   modifiables depuis l'espace admin (onglet "Contenu")
+   ========================================================= */
+const DEFAULT_SITE_CONTENT = {
+  hero_title: "Impression, personnalisation, graphisme, brandmark — tout pour vous plaire.",
+  hero_subtitle: "Matériels informatiques, matériels de personnalisation, services de création de site web, conception et installation de banderoles (banners), et bien plus. Commandez en quelques clics, finalisez sur WhatsApp.",
+  about_text: "Basé à Port-au-Prince, JC Multimedia offre des services de branding, graphic design, web design, personnalisation, etc.",
+  address_1: "123, Rue Lambert, Juvénat, Pétion-Ville",
+  address_2: "10, Brochette 99, Carrefour",
+  nif: "0000-000-000-0",
+  email: "infos@jcmultimedia.com",
+  phone_display: "+509 34 43 2139 / 42 75 5464",
+  social_facebook: "https://www.facebook.com/share/1FA67rVSu3/",
+  social_instagram: "https://www.instagram.com/jcmultimediaht?igsi=MXJiNzlyMmp0aXBkaQ==",
+  social_tiktok: "https://tiktok.com/@jc.multimedia",
+  social_whatsapp_number: "50934432139",
+  footer_tagline: "Impression, personnalisation, graphisme et solutions digitales."
+};
+const SITE_CONTENT_STORAGE_KEY = "jc_multimedia_site_content_v1";
+function loadSiteContentLocal(){ return { ...DEFAULT_SITE_CONTENT, ...(safeGet(SITE_CONTENT_STORAGE_KEY) || {}) }; }
+function saveSiteContentLocal(){ safeSet(SITE_CONTENT_STORAGE_KEY, SITE_CONTENT); }
+let SITE_CONTENT = loadSiteContentLocal();
+
+async function fetchSiteContentFromSupabase(){
+  if(!SUPABASE_ENABLED) return null;
+  try{
+    const { data, error } = await db.from('site_content').select('*').eq('id', 1).single();
+    if(error || !data) throw error || new Error('no data');
+    const { id, ...rest } = data;
+    return rest;
+  }catch(e){
+    console.warn('Supabase site_content fetch failed, using local cache/defaults:', e);
+    return null;
+  }
+}
+async function refreshSiteContent(){
+  const remote = await fetchSiteContentFromSupabase();
+  if(remote){
+    SITE_CONTENT = { ...SITE_CONTENT, ...remote };
+    saveSiteContentLocal();
+  }
+  applySiteContent();
+}
+function applySiteContent(){
+  const c = SITE_CONTENT;
+  const set = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
+  const setAttr = (id, attr, val) => { const el = document.getElementById(id); if(el && val) el.setAttribute(attr, val); };
+
+  set('heroTitleText', c.hero_title);
+  set('heroSubtitleText', c.hero_subtitle);
+  set('aboutText', c.about_text);
+  set('footerTaglineText', c.footer_tagline);
+  set('footerContactBlock', `
+    ${c.address_1}<br>
+    ${c.address_2}<br><br>
+    NIF : ${c.nif}<br>
+    ${c.email}<br>
+    ${c.phone_display}
+  `);
+
+  document.querySelectorAll('[data-social="facebook"]').forEach(el => el.href = c.social_facebook);
+  document.querySelectorAll('[data-social="instagram"]').forEach(el => el.href = c.social_instagram);
+  document.querySelectorAll('[data-social="tiktok"]').forEach(el => el.href = c.social_tiktok);
+  document.querySelectorAll('[data-social="whatsapp"]').forEach(el => el.href = 'https://wa.me/' + c.social_whatsapp_number);
+  document.querySelectorAll('[data-social="google"]').forEach(el => el.href = 'https://www.google.com/search?q=' + encodeURIComponent('JC Multimedia Port-au-Prince'));
+}
+
+/* =========================================================
    CATALOGUE PAR DÉFAUT — modifiable depuis l'espace admin
    (les modifications admin sont sauvegardées et remplacent ces
    valeurs par défaut sur cet appareil)
@@ -110,7 +178,8 @@ let CATALOG = loadCatalogLocal();
 /* ---- Mapping Supabase (table catalog_items) <-> objets JS ---- */
 function rowToItem(row){
   const item = {
-    id: row.id, name: row.name, imageUrl: row.image_url || "",
+    id: row.id, name: row.name,
+    imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(Boolean) : (row.image_url ? [row.image_url] : []),
     inStock: row.in_stock, customizable: row.customizable, promo: row.promo
   };
   if(row.kind === 'services'){
@@ -124,8 +193,9 @@ function rowToItem(row){
   return item;
 }
 function itemToRow(kind, item){
+  const urls = (item.imageUrls || []).filter(Boolean);
   return {
-    id: item.id, kind, name: item.name, image_url: item.imageUrl || null,
+    id: item.id, kind, name: item.name, image_urls: urls, image_url: urls[0] || null,
     utility: item.utility ?? null, description: item.description ?? null,
     price: kind === 'products' ? (item.price ?? 0) : null,
     old_price: kind === 'products' ? (item.oldPrice ?? null) : null,
@@ -204,7 +274,7 @@ function cardHTML(item){
       <a class="thumb" href="/article/${item.id}" aria-label="Voir la page de ${item.name}">
         ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
         ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
-        ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
+        ${(item.imageUrls && item.imageUrls[0]) ? `<img src="${item.imageUrls[0]}" alt="${item.name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
       </a>
       <div class="body">
         <h3><a href="/article/${item.id}" class="card-title-link">${item.name}</a></h3>
@@ -245,6 +315,19 @@ function renderGrid(){
     sAllGrid.innerHTML = filteredAllServices.length
       ? filteredAllServices.map(cardHTML).join('')
       : `<p class="card-sub">${CATALOG.services.length === 0 ? "Nos services seront bientôt détaillés ici — revenez vite !" : "Aucun service ne correspond à votre recherche."}</p>`;
+  }
+
+  const promoSection = document.getElementById('promoSection');
+  const promoGrid = document.getElementById('promoGrid');
+  if(promoSection && promoGrid){
+    const promoItems = [...CATALOG.products, ...CATALOG.services].filter(i => i.promo);
+    if(promoItems.length){
+      promoGrid.innerHTML = promoItems.map(cardHTML).join('');
+      promoSection.style.display = 'block';
+    } else {
+      promoGrid.innerHTML = '';
+      promoSection.style.display = 'none';
+    }
   }
 }
 function stepQty(id, delta){
@@ -293,19 +376,33 @@ function renderItemDetail(id){
   if(!item) return;
   const subText = item.utility || item.description || "";
   const outOfStock = item.inStock === false;
+  const images = (item.imageUrls && item.imageUrls.length) ? item.imageUrls : [];
   const priceBlock = isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
     : `<div class="price-row"><span class="price">${priceDualInline(item.price)}</span>${item.oldPrice ? `<span class="price-old">$${item.oldPrice.toFixed(2)}</span>` : ''}</div>`;
+
+  const galleryHTML = images.length ? `
+    <div class="item-detail-thumb">
+      ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
+      ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
+      <img id="galleryMainImg" src="${images[0]}" alt="${item.name}">
+    </div>
+    ${images.length > 1 ? `
+      <div class="gallery-thumbs">
+        ${images.map((url,i) => `<button class="gallery-thumb-btn ${i===0?'active':''}" data-idx="${i}" onclick="setGalleryImage(${JSON.stringify(images).replace(/"/g,'&quot;')}, ${i}, this)"><img src="${url}" alt=""></button>`).join('')}
+      </div>` : ''}
+  ` : `
+    <div class="item-detail-thumb">
+      ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
+      ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
+      <div class="no-image">Pas de photo</div>
+    </div>`;
 
   document.title = item.name + ' — JC Multimedia';
   const canonicalEl = document.getElementById('canonicalLink');
   if(canonicalEl) canonicalEl.href = window.location.origin + '/article/' + id;
   document.getElementById('itemDetailContent').innerHTML = `
-    <div class="item-detail-thumb">
-      ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
-      ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
-      ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}">` : `<div class="no-image">Pas de photo</div>`}
-    </div>
+    ${galleryHTML}
     <h1>${item.name}</h1>
     ${subText ? `<p class="card-sub" style="font-size:1rem;">${subText}</p>` : ''}
     ${priceBlock}
@@ -325,6 +422,12 @@ function copyItemLink(){
   } else {
     showToast(url);
   }
+}
+function setGalleryImage(images, idx, btnEl){
+  const main = document.getElementById('galleryMainImg');
+  if(main) main.src = images[idx];
+  document.querySelectorAll('.gallery-thumb-btn').forEach(b => b.classList.remove('active'));
+  if(btnEl) btnEl.classList.add('active');
 }
 /* Sur la page article.html : lit l'identifiant dans l'URL (/article/ID) et
    affiche la bonne fiche dès que le catalogue est disponible. */
@@ -535,7 +638,7 @@ function collectCustomizeList(){
   showStepPayment();
 }
 function showStepPayment(){
-  const options = ["MonCash","Cash","Virement Bancaire"];
+  const options = ["MonCash","Natcash","Cash","Virement Bancaire","Carte bancaire"];
   const hasCustomizable = cartEntries().some(i=>i.customizable);
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
@@ -729,14 +832,82 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','orders','settings'].forEach(t=>{
+  ['dashboard','catalog','content','orders','settings'].forEach(t=>{
     document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
   if(name==='dashboard') renderAdminDashboard();
   if(name==='catalog') renderAdminCatalog();
+  if(name==='content') renderAdminContent();
   if(name==='orders') renderAdminOrders();
   if(name==='settings') renderAdminSettings();
+}
+
+/* ---- Contenu du site ---- */
+function renderAdminContent(){
+  const c = SITE_CONTENT;
+  const note = SUPABASE_ENABLED
+    ? "Ces textes sont enregistrés dans Supabase et visibles immédiatement par tous vos visiteurs."
+    : "⚠️ Supabase n'est pas configuré : ces textes restent enregistrés uniquement sur cet appareil/navigateur.";
+  document.getElementById('adminTab-content').innerHTML = `
+    <div class="admin-note">${note}</div>
+
+    <h3 style="margin-top:0;">Page d'accueil</h3>
+    <div class="form-field"><label>Titre principal</label><input type="text" id="c-hero-title" value="${(c.hero_title||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Sous-titre</label><input type="text" id="c-hero-subtitle" value="${(c.hero_subtitle||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Texte "À propos"</label><input type="text" id="c-about" value="${(c.about_text||'').replace(/"/g,'&quot;')}"></div>
+
+    <h3>Coordonnées</h3>
+    <div class="form-field"><label>Adresse 1</label><input type="text" id="c-addr1" value="${(c.address_1||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Adresse 2</label><input type="text" id="c-addr2" value="${(c.address_2||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>NIF</label><input type="text" id="c-nif" value="${(c.nif||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Email de contact</label><input type="text" id="c-email" value="${(c.email||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Téléphone(s) affichés</label><input type="text" id="c-phone" value="${(c.phone_display||'').replace(/"/g,'&quot;')}"></div>
+
+    <h3>Pied de page</h3>
+    <div class="form-field"><label>Slogan (sous le logo)</label><input type="text" id="c-tagline" value="${(c.footer_tagline||'').replace(/"/g,'&quot;')}"></div>
+
+    <h3>Réseaux sociaux</h3>
+    <div class="form-field"><label>Facebook (lien complet)</label><input type="text" id="c-facebook" value="${(c.social_facebook||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Instagram (lien complet)</label><input type="text" id="c-instagram" value="${(c.social_instagram||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>TikTok (lien complet)</label><input type="text" id="c-tiktok" value="${(c.social_tiktok||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Numéro WhatsApp (format international, sans le +)</label><input type="text" id="c-whatsapp" value="${(c.social_whatsapp_number||'').replace(/"/g,'&quot;')}"></div>
+
+    <button class="btn btn-primary" id="save-content-btn" onclick="adminSaveContent()">Enregistrer</button>
+  `;
+}
+async function adminSaveContent(){
+  const val = id => document.getElementById(id).value.trim();
+  SITE_CONTENT = {
+    hero_title: val('c-hero-title'),
+    hero_subtitle: val('c-hero-subtitle'),
+    about_text: val('c-about'),
+    address_1: val('c-addr1'),
+    address_2: val('c-addr2'),
+    nif: val('c-nif'),
+    email: val('c-email'),
+    phone_display: val('c-phone'),
+    footer_tagline: val('c-tagline'),
+    social_facebook: val('c-facebook'),
+    social_instagram: val('c-instagram'),
+    social_tiktok: val('c-tiktok'),
+    social_whatsapp_number: val('c-whatsapp')
+  };
+  if(SUPABASE_ENABLED){
+    const btn = document.getElementById('save-content-btn');
+    if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+    try{
+      const { error } = await db.from('site_content').upsert({ id: 1, ...SITE_CONTENT });
+      if(error) throw error;
+    }catch(e){
+      showToast("Échec de l'enregistrement Supabase — vérifiez votre connexion.");
+      console.error(e);
+    }
+    if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  }
+  saveSiteContentLocal();
+  applySiteContent();
+  showToast("Contenu enregistré");
 }
 
 /* ---- Tableau de bord ---- */
@@ -800,10 +971,14 @@ function adminItemRowHTML(kind, item){
       <div class="form-field"><label>Nom</label><input type="text" id="f-name-${item.id}" value="${(item.name||'').replace(/"/g,'&quot;')}"></div>
       <div class="form-field"><label>${isService?'Description':'Utilité'}</label><input type="text" id="f-desc-${item.id}" value="${((item.utility||item.description)||'').replace(/"/g,'&quot;')}"></div>
       <div class="form-field">
-        <label>Photo</label>
+        <label>Photos (jusqu'à 3)</label>
         <div class="admin-image-row">
-          <div class="admin-image-preview" id="f-imgpreview-${item.id}">${item.imageUrl ? `<img src="${item.imageUrl}" alt="">` : '<span>Pas de photo</span>'}</div>
-          <input type="file" accept="image/*" id="f-image-${item.id}" onchange="previewAdminImage('${item.id}')">
+          ${[0,1,2].map(slot => `
+            <div class="admin-image-slot">
+              <div class="admin-image-preview" id="f-imgpreview-${item.id}-${slot}">${(item.imageUrls && item.imageUrls[slot]) ? `<img src="${item.imageUrls[slot]}" alt="">` : '<span>Pas de photo</span>'}</div>
+              <input type="file" accept="image/*" id="f-image-${item.id}-${slot}" onchange="previewAdminImage('${item.id}', ${slot})">
+            </div>
+          `).join('')}
         </div>
       </div>
       ${isService ? `
@@ -825,18 +1000,18 @@ function toggleAdminEdit(id){
   const el = document.getElementById('adminedit-'+id);
   el.style.display = (el.style.display === 'none') ? 'block' : 'none';
 }
-function previewAdminImage(id){
-  const input = document.getElementById('f-image-'+id);
-  const preview = document.getElementById('f-imgpreview-'+id);
+function previewAdminImage(id, slot){
+  const input = document.getElementById(`f-image-${id}-${slot}`);
+  const preview = document.getElementById(`f-imgpreview-${id}-${slot}`);
   const file = input.files && input.files[0];
   if(!file) return;
   const reader = new FileReader();
   reader.onload = e => { preview.innerHTML = `<img src="${e.target.result}" alt="">`; };
   reader.readAsDataURL(file);
 }
-async function uploadItemImage(id, file){
+async function uploadItemImage(id, slot, file){
   const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-  const path = `${id}-${Date.now()}.${ext}`;
+  const path = `${id}-${slot}-${Date.now()}.${ext}`;
   const { error } = await db.storage.from('catalog-images').upload(path, file, { upsert: true });
   if(error) throw error;
   const { data } = db.storage.from('catalog-images').getPublicUrl(path);
@@ -861,15 +1036,21 @@ async function adminSaveItem(kind, id){
     item.customizable = document.getElementById('f-custom-'+id).checked;
   }
 
-  const fileInput = document.getElementById('f-image-'+id);
-  const file = fileInput.files && fileInput.files[0];
+  const imageUrls = item.imageUrls ? [...item.imageUrls] : [];
+  const filesToUpload = [];
+  for(const slot of [0,1,2]){
+    const fileInput = document.getElementById(`f-image-${id}-${slot}`);
+    const file = fileInput && fileInput.files && fileInput.files[0];
+    if(file) filesToUpload.push({ slot, file });
+  }
 
   if(SUPABASE_ENABLED){
     if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
     try{
-      if(file){
-        item.imageUrl = await uploadItemImage(id, file);
+      for(const { slot, file } of filesToUpload){
+        imageUrls[slot] = await uploadItemImage(id, slot, file);
       }
+      item.imageUrls = imageUrls.filter(Boolean);
       const { error } = await db.from('catalog_items').upsert(itemToRow(kind, item));
       if(error) throw error;
     }catch(e){
@@ -877,7 +1058,7 @@ async function adminSaveItem(kind, id){
       console.error(e);
     }
     if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
-  } else if(file){
+  } else if(filesToUpload.length){
     showToast("L'envoi de photo nécessite que Supabase soit configuré.");
   }
   saveCatalogLocal();
@@ -907,8 +1088,8 @@ async function adminDeleteItem(kind, id){
 async function adminAddItem(kind){
   const id = 'item_' + Date.now();
   const base = kind === 'services'
-    ? { id, name:"Nouveau service", description:"Description à compléter.", startingPrice:0 }
-    : { id, name:"Nouveau produit", utility:"Utilité à compléter.", price:0, customizable:false, inStock:true };
+    ? { id, name:"Nouveau service", description:"Description à compléter.", startingPrice:0, imageUrls:[] }
+    : { id, name:"Nouveau produit", utility:"Utilité à compléter.", price:0, customizable:false, inStock:true, imageUrls:[] };
   CATALOG[kind].push(base);
   uiQty[id] = 1;
   if(SUPABASE_ENABLED){
@@ -1095,6 +1276,7 @@ function adminChangePassword(){
    ========================================================= */
 renderGrid();
 updateBadge();
+applySiteContent();
 if(document.body.dataset.page === 'article') initArticlePage();
 if(document.body.dataset.page === 'admin') checkAdminSession();
 
@@ -1104,6 +1286,7 @@ if(emailField) emailField.style.display = SUPABASE_ENABLED ? 'block' : 'none';
 if(SUPABASE_ENABLED){
   refreshCatalog();
   refreshSettings();
+  refreshSiteContent();
 } else {
   console.info("Supabase non configuré — le site fonctionne en mode local uniquement. Voir schema-supabase.sql pour activer la synchronisation centralisée.");
 }
