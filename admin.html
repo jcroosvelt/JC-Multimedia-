@@ -38,6 +38,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<meta name="robots" content="noindex, nofollow">
 </head>
 <body data-page="admin">
 
@@ -86,6 +87,7 @@
     <a href="/#services">Services</a>
     <a href="/#apropos">À propos</a>
     <a href="/faq">FAQ</a>
+    <a href="/suivi">Suivre ma commande</a>
     <a href="/#contact">Contact</a>
   </nav>
 </div>
@@ -113,14 +115,18 @@
       <button class="admin-tab active" data-tab="dashboard" onclick="showAdminTab('dashboard')">Tableau de bord</button>
       <button class="admin-tab" data-tab="catalog" onclick="showAdminTab('catalog')">Catalogue</button>
       <button class="admin-tab" data-tab="content" onclick="showAdminTab('content')">Contenu</button>
+      <button class="admin-tab" data-tab="banner" onclick="showAdminTab('banner')">Bannière</button>
       <button class="admin-tab" data-tab="orders" onclick="showAdminTab('orders')">Commandes</button>
+      <button class="admin-tab" data-tab="customers" onclick="showAdminTab('customers')">Clients</button>
       <button class="admin-tab" data-tab="settings" onclick="showAdminTab('settings')">Réglages</button>
     </div>
 
     <div id="adminTab-dashboard" class="admin-tab-panel"></div>
     <div id="adminTab-catalog" class="admin-tab-panel" style="display:none;"></div>
     <div id="adminTab-content" class="admin-tab-panel" style="display:none;"></div>
+    <div id="adminTab-banner" class="admin-tab-panel" style="display:none;"></div>
     <div id="adminTab-orders" class="admin-tab-panel" style="display:none;"></div>
+    <div id="adminTab-customers" class="admin-tab-panel" style="display:none;"></div>
     <div id="adminTab-settings" class="admin-tab-panel" style="display:none;"></div>
 
     <button class="btn btn-ghost" onclick="adminLogout()" style="margin-top:24px;">Se déconnecter</button>
@@ -157,6 +163,7 @@
         <a href="/#services">Services</a>
         <a href="/#apropos">À propos</a>
         <a href="/faq">FAQ</a>
+        <a href="/suivi">Suivre ma commande</a>
         <a href="/#contact">Contact</a>
       </nav>
     </div>

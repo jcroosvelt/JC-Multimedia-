@@ -35,8 +35,8 @@ function safeSet(key, val){
    Tant que ces deux valeurs ne sont pas renseignées, le site
    continue de fonctionner normalement en mode local uniquement.
    ========================================================= */
-const SUPABASE_URL = "https://ggfqjumxfpcrfogytsvy.supabase.co";       // ex: https://abcdefgh.supabase.co
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdnZnFqdW14ZnBjcmZvZ3l0c3Z5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMDQzNDcsImV4cCI6MjEwMzg4MDM0N30.A9RXcHj2Lc27sSt0dS6EfO7jCpR-uHblDN_4YninOTY"; // clé "anon public", jamais la "service_role"
+const SUPABASE_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co";       // ex: https://abcdefgh.supabase.co
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrd3JrbGJvcXNwa3p4dGx2bnpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxNzk5MzUsImV4cCI6MjEwNDc1NTkzNX0.dt3AQzMMwE02V5wyADCMQBcqL-8mNqKYIvcZOq8WuTw"; // clé "anon public", jamais la "service_role"
 
 const SUPABASE_CONFIGURED = !SUPABASE_URL.includes("VOTRE_URL") && !SUPABASE_ANON_KEY.includes("VOTRE_CLE");
 // Si la librairie Supabase (chargée depuis un CDN) n'a pas pu se charger — pas de
@@ -55,7 +55,12 @@ if(SUPABASE_CONFIGURED && !SUPABASE_ENABLED){
 const DEFAULT_SETTINGS = {
   whatsapp: "50934432139", // numéro WhatsApp qui reçoit les commandes
   adminPassword: "jcadmin2026", // ⚠️ utilisé UNIQUEMENT si Supabase n'est pas configuré (mode local) — sinon voir Supabase Auth
-  exchangeRate: 132 // gourdes (HTG) pour 1 USD — à vérifier/mettre à jour régulièrement depuis l'espace admin
+  exchangeRate: 132, // gourdes (HTG) pour 1 USD — à vérifier/mettre à jour régulièrement depuis l'espace admin
+  slideshowAutoplay: true,
+  slideshowDurationMs: 5000,
+  slideshowArrows: true,
+  slideshowDots: true,
+  slideshowLoop: true
 };
 function loadSettingsLocal(){ return { ...DEFAULT_SETTINGS, ...(safeGet(SETTINGS_STORAGE_KEY) || {}) }; }
 function saveSettingsLocal(){ safeSet(SETTINGS_STORAGE_KEY, SETTINGS); }
@@ -76,7 +81,15 @@ async function fetchSettingsFromSupabase(){
   try{
     const { data, error } = await db.from('settings').select('*').eq('id', 1).single();
     if(error || !data) throw error || new Error('no data');
-    return { whatsapp: data.whatsapp, exchangeRate: Number(data.exchange_rate) };
+    return {
+      whatsapp: data.whatsapp,
+      exchangeRate: Number(data.exchange_rate),
+      slideshowAutoplay: data.slideshow_autoplay !== false,
+      slideshowDurationMs: Number(data.slideshow_duration_ms) || 5000,
+      slideshowArrows: data.slideshow_arrows !== false,
+      slideshowDots: data.slideshow_dots !== false,
+      slideshowLoop: data.slideshow_loop !== false
+    };
   }catch(e){
     console.warn('Supabase settings fetch failed, using local cache/defaults:', e);
     return null;
@@ -135,6 +148,110 @@ async function refreshSiteContent(){
   }
   applySiteContent();
 }
+/* =========================================================
+   SLIDESHOW D'ACCUEIL — piloté par la base de données, jusqu'à
+   10+ images, autoplay, boucle, flèches, points, swipe tactile,
+   pause à l'interaction. Reste caché si aucun slide n'est configuré
+   (n'affecte jamais le reste de la page d'accueil).
+   ========================================================= */
+let SLIDES = [];
+let slideIndex = 0;
+let slideTimer = null;
+
+async function initHeroSlideshow(){
+  const section = document.getElementById('heroSlideshow');
+  if(!section || !SUPABASE_ENABLED) return;
+  try{
+    const { data, error } = await db.from('hero_slides').select('*').order('display_order', { ascending:true });
+    if(error) throw error;
+    SLIDES = data || [];
+  }catch(e){
+    console.warn('Chargement du slideshow échoué:', e);
+    return;
+  }
+  if(!SLIDES.length){ section.style.display = 'none'; return; }
+  renderSlideshow();
+}
+function renderSlideshow(){
+  const section = document.getElementById('heroSlideshow');
+  const track = document.getElementById('slideshowTrack');
+  const dots = document.getElementById('slideshowDots');
+  if(!section || !track || !SLIDES.length) return;
+
+  const isMobile = window.innerWidth < 640;
+  track.innerHTML = SLIDES.map((s,i) => {
+    const img = (isMobile && s.mobile_image_url) ? s.mobile_image_url : s.image_url;
+    const hasCaption = s.title || s.subtitle || (s.button_text && s.button_url);
+    return `<div class="slide">
+      <img src="${img}" alt="${(s.alt_text||'').replace(/"/g,'&quot;')}" loading="${i===0?'eager':'lazy'}">
+      ${hasCaption ? `
+        <div class="slide-caption">
+          ${s.title ? `<h2>${s.title}</h2>` : ''}
+          ${s.subtitle ? `<p>${s.subtitle}</p>` : ''}
+          ${(s.button_text && s.button_url) ? `<a class="btn btn-primary" href="${s.button_url}">${s.button_text}</a>` : ''}
+        </div>` : ''}
+    </div>`;
+  }).join('');
+
+  dots.innerHTML = SLIDES.map((_,i) => `<button class="slide-dot" onclick="slideshowGoTo(${i})" aria-label="Aller à l'image ${i+1}"></button>`).join('');
+
+  const multi = SLIDES.length > 1;
+  section.querySelectorAll('.slideshow-arrow').forEach(b => b.style.display = (multi && SETTINGS.slideshowArrows) ? 'flex' : 'none');
+  dots.style.display = (multi && SETTINGS.slideshowDots) ? 'flex' : 'none';
+
+  section.style.display = 'block';
+  slideIndex = 0;
+  updateSlidePosition(false);
+  startSlideshowAutoplay();
+
+  if(!section.dataset.wired){
+    section.dataset.wired = '1';
+    section.addEventListener('mouseenter', pauseSlideshowAutoplay);
+    section.addEventListener('mouseleave', startSlideshowAutoplay);
+    let touchStartX = null;
+    section.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; pauseSlideshowAutoplay(); }, { passive:true });
+    section.addEventListener('touchend', e => {
+      if(touchStartX === null) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if(Math.abs(dx) > 40) slideshowGo(dx < 0 ? 1 : -1);
+      touchStartX = null;
+      startSlideshowAutoplay();
+    });
+    window.addEventListener('resize', () => { if(SLIDES.length) renderSlideshow(); });
+  }
+}
+function updateSlidePosition(animate=true){
+  const track = document.getElementById('slideshowTrack');
+  if(!track) return;
+  track.style.transition = animate ? 'transform .5s ease' : 'none';
+  track.style.transform = `translateX(-${slideIndex*100}%)`;
+  document.querySelectorAll('.slide-dot').forEach((d,i)=>d.classList.toggle('active', i===slideIndex));
+}
+function slideshowGo(delta){
+  if(!SLIDES.length) return;
+  let next = slideIndex + delta;
+  if(SETTINGS.slideshowLoop === false){
+    next = Math.max(0, Math.min(SLIDES.length-1, next));
+  } else {
+    next = (next + SLIDES.length) % SLIDES.length;
+  }
+  slideIndex = next;
+  updateSlidePosition();
+  restartSlideshowAutoplay();
+}
+function slideshowGoTo(i){
+  slideIndex = i;
+  updateSlidePosition();
+  restartSlideshowAutoplay();
+}
+function startSlideshowAutoplay(){
+  clearInterval(slideTimer);
+  if(SLIDES.length < 2 || SETTINGS.slideshowAutoplay === false) return;
+  slideTimer = setInterval(()=> slideshowGo(1), SETTINGS.slideshowDurationMs || 5000);
+}
+function pauseSlideshowAutoplay(){ clearInterval(slideTimer); }
+function restartSlideshowAutoplay(){ pauseSlideshowAutoplay(); startSlideshowAutoplay(); }
+
 function applySiteContent(){
   const c = SITE_CONTENT;
   const set = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
@@ -178,7 +295,7 @@ let CATALOG = loadCatalogLocal();
 /* ---- Mapping Supabase (table catalog_items) <-> objets JS ---- */
 function rowToItem(row){
   const item = {
-    id: row.id, name: row.name,
+    id: row.id, name: row.name, code: row.code || null,
     imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(Boolean) : (row.image_url ? [row.image_url] : []),
     inStock: row.in_stock, customizable: row.customizable, promo: row.promo
   };
@@ -401,9 +518,23 @@ function renderItemDetail(id){
   document.title = item.name + ' — JC Multimedia';
   const canonicalEl = document.getElementById('canonicalLink');
   if(canonicalEl) canonicalEl.href = window.location.origin + '/article/' + id;
+
+  const sectionLabel = isEstimate(item) ? 'Nos services' : 'Boutique';
+  const sectionPath = isEstimate(item) ? '/services' : '/boutique';
+  const breadcrumbEl = document.getElementById('articleBreadcrumb');
+  if(breadcrumbEl){
+    breadcrumbEl.innerHTML = `
+      <a href="/">Accueil</a> <span>/</span>
+      <a href="${sectionPath}">${sectionLabel}</a> <span>/</span>
+      <span aria-current="page">${item.name}</span>
+    `;
+  }
+  injectItemStructuredData(item);
+
   document.getElementById('itemDetailContent').innerHTML = `
     ${galleryHTML}
     <h1>${item.name}</h1>
+    ${item.code ? `<p class="item-code-tag" style="display:inline-block; margin-bottom:10px;">${item.code}</p>` : ''}
     ${subText ? `<p class="card-sub" style="font-size:1rem;">${subText}</p>` : ''}
     ${priceBlock}
     <div class="qty-row">
@@ -415,6 +546,40 @@ function renderItemDetail(id){
     <button class="btn btn-ghost" style="margin-top:12px;" onclick="copyItemLink()">Copier le lien de cette page</button>
   `;
 }
+function injectItemStructuredData(item){
+  const existing = document.getElementById('itemStructuredData');
+  if(existing) existing.remove();
+
+  const isService = isEstimate(item);
+  const price = isService ? item.startingPrice : item.price;
+  const data = {
+    "@context": "https://schema.org",
+    "@type": isService ? "Service" : "Product",
+    "name": item.name,
+    "url": window.location.origin + '/article/' + item.id
+  };
+  if(item.utility || item.description) data.description = item.utility || item.description;
+  if(item.imageUrls && item.imageUrls.length) data.image = item.imageUrls;
+  if(item.code) data[isService ? "serviceType" : "sku"] = item.code;
+  if(!isService){
+    data.brand = { "@type": "Brand", "name": "JC Multimedia" };
+    data.offers = {
+      "@type": "Offer",
+      "priceCurrency": "USD",
+      "price": price,
+      "availability": item.inStock === false ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+      "url": window.location.origin + '/article/' + item.id
+    };
+  } else if(price != null){
+    data.offers = { "@type": "Offer", "priceCurrency": "USD", "price": price, "url": window.location.origin + '/article/' + item.id };
+  }
+
+  const script = document.createElement('script');
+  script.type = 'application/ld+json';
+  script.id = 'itemStructuredData';
+  script.textContent = JSON.stringify(data);
+  document.head.appendChild(script);
+}
 function copyItemLink(){
   const url = window.location.href;
   if(navigator.clipboard){
@@ -422,6 +587,57 @@ function copyItemLink(){
   } else {
     showToast(url);
   }
+}
+
+/* =========================================================
+   SUIVI DE COMMANDE — recherche publique par code + téléphone
+   (ne révèle jamais rien sans connaître les deux à la fois)
+   ========================================================= */
+async function submitTrackOrder(){
+  const code = document.getElementById('trackCode').value.trim();
+  const phone = document.getElementById('trackPhone').value.trim();
+  const resultEl = document.getElementById('trackResult');
+  if(!code || !phone){
+    resultEl.innerHTML = '<p class="form-error">Merci de renseigner le code et le téléphone.</p>';
+    return;
+  }
+  if(!SUPABASE_ENABLED){
+    resultEl.innerHTML = '<p class="form-error">Le suivi de commande nécessite une connexion. Réessayez plus tard.</p>';
+    return;
+  }
+  resultEl.innerHTML = '<p class="card-sub">Recherche…</p>';
+  try{
+    const { data, error } = await db.rpc('track_order', { p_code: code, p_phone: phone });
+    if(error) throw error;
+    if(!data){
+      resultEl.innerHTML = '<p class="form-error">Aucune commande trouvée avec ce code et ce téléphone. Vérifiez vos informations.</p>';
+      return;
+    }
+    renderTrackResult(data);
+  }catch(e){
+    resultEl.innerHTML = '<p class="form-error">Une erreur est survenue. Réessayez.</p>';
+    console.error(e);
+  }
+}
+function renderTrackResult(o){
+  const rate = o.exchange_rate || SETTINGS.exchangeRate;
+  const htg = new Intl.NumberFormat('fr-FR').format(Math.round((o.total||0) * rate));
+  const items = (o.items||[]).map(i => `<li>${i.name} × ${i.qty}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('');
+  const history = (o.history||[]).map(h => `<li>${h.status} — ${new Date(h.changed_at).toLocaleString('fr-FR')}</li>`).join('');
+  document.getElementById('trackResult').innerHTML = `
+    <div class="admin-order-card">
+      <div class="admin-order-head">
+        <strong>${o.code}</strong>
+        <span class="mono">${new Date(o.created_at).toLocaleDateString('fr-FR')}</span>
+      </div>
+      <div class="item-code-tag" style="margin:6px 0; display:inline-block;">${o.status}</div>
+      <ul class="admin-list">${items}</ul>
+      <div class="cart-total-row"><span>Total</span><span class="amt">$${Number(o.total||0).toFixed(2)}<span class="price-htg">≈ ${htg} HTG</span></span></div>
+      <div class="card-sub">Paiement : ${o.payment || '—'} · ${o.delivery || '—'}</div>
+      <h3 style="margin-bottom:6px;">Progression</h3>
+      <ul class="admin-list">${history}</ul>
+    </div>
+  `;
 }
 function setGalleryImage(images, idx, btnEl){
   const main = document.getElementById('galleryMainImg');
@@ -572,7 +788,8 @@ function closeStep(){
    ORDER FLOW: coordonnées -> personnalisation -> paiement -> livraison -> WhatsApp -> confirmation
    ========================================================= */
 function startOrderFlow(){
-  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null };
+  const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
+  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[] };
   showStepCustomerInfo();
 }
 function showStepCustomerInfo(){
@@ -617,6 +834,10 @@ function showStepCustomizeAsk(){
     <button class="opt-btn" onclick="orderFlow.customize=false; showStepPayment();">Non</button>
   `, "Personnalisation des articles");
 }
+const MAX_UPLOAD_FILES = 3;
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5 Mo
+const ALLOWED_UPLOAD_TYPES = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
+
 function showStepCustomizeList(){
   const items = cartEntries().filter(i => i.customizable);
   openStep(`
@@ -627,11 +848,44 @@ function showStepCustomizeList(){
         ${i.name}
       </label>
     `).join('')}
+    <div class="form-field" style="margin-top:16px;">
+      <label>Joindre des fichiers (logo, photo, design…) — jusqu'à ${MAX_UPLOAD_FILES}, 5 Mo max chacun (images ou PDF)</label>
+      <div class="admin-image-row">
+        ${[0,1,2].map(slot => `
+          <div class="admin-image-slot">
+            <div class="admin-image-preview" id="cfile-preview-${slot}">${orderFlow.uploadFiles[slot] ? `<span>${orderFlow.uploadFiles[slot].name.slice(0,14)}</span>` : '<span>Aucun fichier</span>'}</div>
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" id="cfile-${slot}" onchange="handleCustomizeFileChange(${slot})">
+          </div>
+        `).join('')}
+      </div>
+      <p id="cfileError" class="form-error" style="display:none;"></p>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="showStepCustomizeAsk()">Retour</button>
       <button class="btn btn-primary" onclick="collectCustomizeList()">Suivant</button>
     </div>
   `, "Articles à personnaliser");
+}
+function handleCustomizeFileChange(slot){
+  const input = document.getElementById('cfile-'+slot);
+  const file = input.files[0];
+  const errorEl = document.getElementById('cfileError');
+  errorEl.style.display = 'none';
+  if(!file) return;
+  if(!ALLOWED_UPLOAD_TYPES.includes(file.type)){
+    errorEl.textContent = "Format non accepté. Utilisez une image (JPG, PNG, WEBP, GIF) ou un PDF.";
+    errorEl.style.display = 'block';
+    input.value = '';
+    return;
+  }
+  if(file.size > MAX_UPLOAD_SIZE){
+    errorEl.textContent = "Fichier trop volumineux (5 Mo maximum).";
+    errorEl.style.display = 'block';
+    input.value = '';
+    return;
+  }
+  orderFlow.uploadFiles[slot] = file;
+  document.getElementById('cfile-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
 }
 function collectCustomizeList(){
   orderFlow.customizedItems = Array.from(document.querySelectorAll('.check-row input:checked')).map(el => el.value);
@@ -657,32 +911,114 @@ function showStepDelivery(){
     ${options.map(o => `<button class="opt-btn ${orderFlow.delivery===o?'selected':''}" onclick="selectDelivery('${o}')">${o}</button>`).join('')}
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="showStepPayment()">Retour</button>
-      <button class="btn btn-primary" onclick="orderFlow.delivery ? sendOrder() : null">Envoyer</button>
+      <button class="btn btn-primary" id="sendOrderBtn" onclick="orderFlow.delivery ? handleSendOrderClick() : null">Envoyer</button>
     </div>
   `, "Livraison ou retrait");
 }
 function selectDelivery(o){ orderFlow.delivery = o; showStepDelivery(); }
 
-function sendOrder(){
+let orderSending = false;
+async function handleSendOrderClick(){
+  if(orderSending) return;
+  orderSending = true;
+  const btn = document.getElementById('sendOrderBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
+  try{
+    await sendOrder();
+  } finally {
+    orderSending = false;
+  }
+}
+
+async function sendOrder(){
   const items = cartEntries();
   const total = cartTotal();
 
-  let msg = "Bonjour JC Multimedia, je souhaite commander :%0A%0A";
-  msg += `Nom : ${orderFlow.customerName}%0ATéléphone : ${orderFlow.customerPhone}%0A`;
-  if(orderFlow.customerAddress) msg += `Adresse : ${orderFlow.customerAddress}%0A`;
-  msg += `%0A`;
-  items.forEach(i => {
-    const tag = orderFlow.customizedItems.includes(i.id) ? " (à personnaliser)" : "";
-    const lineTotal = unitPrice(i) * i.qty;
-    const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatUSD(lineTotal)} (≈ ${formatHTG(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
-    msg += `• ${i.name}${tag} x${i.qty} — ${amount}%0A`;
-  });
-  msg += `%0ATotal estimé : ${formatUSD(total)} (≈ ${formatHTG(total)})%0A`;
-  msg += `Mode de paiement : ${orderFlow.payment}%0A`;
-  msg += `Livraison : ${orderFlow.delivery}`;
+  let orderCode = null;
+  let orderId = null;
+
+  if(SUPABASE_ENABLED){
+    try{
+      const { data, error } = await db.from('orders').insert({
+        customer_name: orderFlow.customerName,
+        customer_phone: orderFlow.customerPhone,
+        customer_address: orderFlow.customerAddress || null,
+        items: items.map(i => ({
+          name: i.name,
+          qty: i.qty,
+          kind: isEstimate(i) ? 'services' : 'products',
+          customized: orderFlow.customizedItems.includes(i.id)
+        })),
+        total: total,
+        exchange_rate: SETTINGS.exchangeRate,
+        payment: orderFlow.payment,
+        delivery: orderFlow.delivery,
+        idempotency_key: orderFlow.idempotencyKey
+      }).select('id, code').single();
+      if(error) throw error;
+      orderId = data.id;
+      orderCode = data.code;
+
+      // Lignes de commande détaillées avec snapshot (prix, code, nom au
+      // moment de l'achat) — une modification future du catalogue ne
+      // change jamais l'historique de cette commande.
+      const lineRows = items.map(i => ({
+        order_id: orderId,
+        catalog_item_id: i.id,
+        kind: isEstimate(i) ? 'services' : 'products',
+        code: i.code || null,
+        name: i.name,
+        unit_price: unitPrice(i),
+        is_estimate: isEstimate(i),
+        quantity: i.qty,
+        customized: orderFlow.customizedItems.includes(i.id),
+        line_total: unitPrice(i) * i.qty
+      }));
+      if(lineRows.length){
+        const { error: itemsError } = await db.from('order_items').insert(lineRows);
+        if(itemsError) console.warn('order_items insert failed:', itemsError);
+      }
+
+      // Enregistrement du paiement — TOUJOURS "En attente" au départ.
+      // Choisir un mode de paiement ne veut jamais dire que l'argent a
+      // été reçu ; seul l'admin confirme manuellement après vérification.
+      const { error: paymentError } = await db.from('payments').insert({
+        order_id: orderId,
+        method: orderFlow.payment,
+        amount: total,
+        status: 'En attente'
+      });
+      if(paymentError) console.warn('payment insert failed:', paymentError);
+
+      // Envoi des fichiers joints (logo, design…) — chemin de stockage
+      // toujours généré ici, jamais le nom brut envoyé par le client ;
+      // le nom d'origine est seulement conservé pour affichage à l'admin.
+      const filesToUpload = (orderFlow.uploadFiles || []).filter(Boolean);
+      for(const file of filesToUpload){
+        try{
+          const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+          const safePath = `${orderId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+          const { error: upErr } = await db.storage.from('order-uploads').upload(safePath, file);
+          if(upErr) throw upErr;
+          await db.from('order_uploads').insert({
+            order_id: orderId,
+            original_filename: file.name,
+            storage_path: safePath,
+            mime_type: file.type,
+            size_bytes: file.size
+          });
+        }catch(e){ console.warn('file upload failed:', e); }
+      }
+    }catch(e){
+      // Si la clé d'idempotence existe déjà (double clic malgré la
+      // protection du bouton), on ne recrée jamais une seconde commande.
+      console.warn('Supabase order insert failed, using local fallback only:', e);
+    }
+  }
 
   const orderRecord = {
     date: Date.now(),
+    code: orderCode,
     customerName: orderFlow.customerName,
     customerPhone: orderFlow.customerPhone,
     customerAddress: orderFlow.customerAddress,
@@ -692,43 +1028,41 @@ function sendOrder(){
     payment: orderFlow.payment,
     delivery: orderFlow.delivery
   };
-
-  // On envoie toujours une copie locale (repli hors-ligne), et on tente
-  // en plus Supabase pour que la commande soit visible depuis N'IMPORTE
-  // QUEL appareil dans l'espace admin, pas seulement celui du client.
   logOrderLocal(orderRecord);
-  logOrderToSupabase(orderRecord);
+
+  let msg = "Bonjour JC Multimedia, je souhaite commander :%0A%0A";
+  if(orderCode) msg += `Code commande : ${orderCode}%0A%0A`;
+  msg += `Nom : ${orderFlow.customerName}%0ATéléphone : ${orderFlow.customerPhone}%0A`;
+  if(orderFlow.customerAddress) msg += `Adresse : ${orderFlow.customerAddress}%0A`;
+  msg += `%0A`;
+  items.forEach(i => {
+    const tag = orderFlow.customizedItems.includes(i.id) ? " (à personnaliser)" : "";
+    const codeTag = i.code ? ` [${i.code}]` : "";
+    const lineTotal = unitPrice(i) * i.qty;
+    const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatUSD(lineTotal)} (≈ ${formatHTG(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
+    msg += `• ${i.name}${codeTag}${tag} x${i.qty} — ${amount}%0A`;
+  });
+  msg += `%0ATotal estimé : ${formatUSD(total)} (≈ ${formatHTG(total)})%0A`;
+  msg += `Mode de paiement : ${orderFlow.payment}%0A`;
+  msg += `Livraison : ${orderFlow.delivery}`;
 
   window.open(`https://wa.me/${SETTINGS.whatsapp}?text=${msg}`, "_blank");
 
   cart = {};
   saveCart();
   updateBadge();
-  showStepConfirmation();
+  showStepConfirmation(orderCode);
 }
-async function logOrderToSupabase(record){
-  if(!SUPABASE_ENABLED) return;
-  try{
-    const { error } = await db.from('orders').insert({
-      customer_name: record.customerName,
-      customer_phone: record.customerPhone,
-      customer_address: record.customerAddress || null,
-      items: record.items,
-      total: record.total,
-      exchange_rate: record.exchangeRate,
-      payment: record.payment,
-      delivery: record.delivery
-    });
-    if(error) throw error;
-  }catch(e){
-    console.warn('Supabase order insert failed, order kept locally only:', e);
-  }
-}
-function showStepConfirmation(){
+
+function showStepConfirmation(orderCode){
+  const codeBlock = orderCode
+    ? `<p class="order-code-display">Votre code de commande<br><strong>${orderCode}</strong></p>`
+    : '';
   openStep(`
     <div class="modal-confirm">
       <div class="confirm-icon">✓</div>
       <h3 style="margin-right:0;">Commande envoyée !</h3>
+      ${codeBlock}
       <p class="card-sub">Votre commande a été transmise sur WhatsApp. Un membre de l'équipe JC Multimedia vous répondra pour confirmer les détails, le paiement et la livraison.</p>
       <button class="btn btn-primary btn-block" onclick="closeStep(); closeCart();">Fermer</button>
     </div>
@@ -832,18 +1166,210 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','orders','settings'].forEach(t=>{
+  ['dashboard','catalog','content','banner','orders','customers','settings'].forEach(t=>{
     document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
   if(name==='dashboard') renderAdminDashboard();
   if(name==='catalog') renderAdminCatalog();
   if(name==='content') renderAdminContent();
+  if(name==='banner') renderAdminBanner();
   if(name==='orders') renderAdminOrders();
+  if(name==='customers') renderAdminCustomers();
   if(name==='settings') renderAdminSettings();
 }
 
-/* ---- Contenu du site ---- */
+/* ---- Clients ---- */
+/* ---- Bannière d'accueil (slideshow) ---- */
+let ADMIN_SLIDES = [];
+async function renderAdminBanner(){
+  const el = document.getElementById('adminTab-banner');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ La bannière d'accueil nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('hero_slides').select('*').order('display_order', { ascending:true });
+    if(error) throw error;
+    ADMIN_SLIDES = data || [];
+  }catch(e){
+    el.innerHTML = `<div class="admin-note">Échec du chargement des slides.</div>`;
+    console.error(e);
+    return;
+  }
+  el.innerHTML = `
+    <div class="admin-note">Le slideshow s'affiche en haut de l'accueil uniquement s'il y a au moins un slide actif. Jusqu'à 10+ images, sans limite artificielle.</div>
+    <div id="adminSlidesList"></div>
+    <button class="btn btn-ghost" onclick="adminAddSlide()">+ Ajouter un slide</button>
+  `;
+  renderAdminSlidesList();
+}
+function renderAdminSlidesList(){
+  const container = document.getElementById('adminSlidesList');
+  if(!container) return;
+  container.innerHTML = ADMIN_SLIDES.map((s, idx) => `
+    <div class="admin-item-row" id="adminslide-${s.id}">
+      <div class="admin-item-summary" onclick="toggleAdminSlideEdit(${s.id})">
+        <span>${s.title || '(sans titre)'} ${!s.is_active ? '<span class="stock-flag" style="position:static;">Désactivé</span>' : ''}</span>
+        <div style="display:flex; gap:4px; margin-left:auto;">
+          <button class="qty-btn" onclick="event.stopPropagation(); adminMoveSlide(${idx}, -1)" ${idx===0?'disabled':''} aria-label="Monter">↑</button>
+          <button class="qty-btn" onclick="event.stopPropagation(); adminMoveSlide(${idx}, 1)" ${idx===ADMIN_SLIDES.length-1?'disabled':''} aria-label="Descendre">↓</button>
+        </div>
+      </div>
+      <div class="admin-item-edit" id="adminslideedit-${s.id}" style="display:none;">
+        <div class="form-field">
+          <label>Image (desktop)</label>
+          <div class="admin-image-preview" id="slideimg-${s.id}-desktop" style="width:100%; height:120px;">${s.image_url ? `<img src="${s.image_url}" alt="">` : '<span>Pas de photo</span>'}</div>
+          <input type="file" accept="image/*" id="slidefile-${s.id}-desktop">
+        </div>
+        <div class="form-field">
+          <label>Image mobile (optionnelle)</label>
+          <div class="admin-image-preview" id="slideimg-${s.id}-mobile" style="width:100%; height:120px;">${s.mobile_image_url ? `<img src="${s.mobile_image_url}" alt="">` : '<span>Pas de photo</span>'}</div>
+          <input type="file" accept="image/*" id="slidefile-${s.id}-mobile">
+        </div>
+        <div class="form-field"><label>Texte alternatif (accessibilité)</label><input type="text" id="slide-alt-${s.id}" value="${(s.alt_text||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Titre</label><input type="text" id="slide-title-${s.id}" value="${(s.title||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Sous-titre</label><input type="text" id="slide-subtitle-${s.id}" value="${(s.subtitle||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Texte du bouton</label><input type="text" id="slide-btntext-${s.id}" value="${(s.button_text||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Lien du bouton</label><input type="text" id="slide-btnurl-${s.id}" value="${(s.button_url||'').replace(/"/g,'&quot;')}" placeholder="/boutique"></div>
+        <div class="form-field"><label>Début de diffusion (optionnel)</label><input type="datetime-local" id="slide-start-${s.id}" value="${s.start_at ? s.start_at.slice(0,16) : ''}"></div>
+        <div class="form-field"><label>Fin de diffusion (optionnel)</label><input type="datetime-local" id="slide-end-${s.id}" value="${s.end_at ? s.end_at.slice(0,16) : ''}"></div>
+        <label class="check-row"><input type="checkbox" id="slide-active-${s.id}" ${s.is_active?'checked':''}> Actif</label>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="slidesave-${s.id}" onclick="adminSaveSlide(${s.id})">Enregistrer</button>
+          <button class="btn btn-ghost" onclick="adminDeleteSlide(${s.id})">Supprimer</button>
+        </div>
+      </div>
+    </div>
+  `).join('') || '<p class="card-sub">Aucun slide pour le moment.</p>';
+}
+function toggleAdminSlideEdit(id){
+  const el = document.getElementById('adminslideedit-'+id);
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+async function adminMoveSlide(idx, dir){
+  const otherIdx = idx + dir;
+  if(otherIdx < 0 || otherIdx >= ADMIN_SLIDES.length) return;
+  const a = ADMIN_SLIDES[idx], b = ADMIN_SLIDES[otherIdx];
+  const aOrder = a.display_order, bOrder = b.display_order;
+  a.display_order = bOrder; b.display_order = aOrder;
+  [ADMIN_SLIDES[idx], ADMIN_SLIDES[otherIdx]] = [ADMIN_SLIDES[otherIdx], ADMIN_SLIDES[idx]];
+  renderAdminSlidesList();
+  try{
+    await db.from('hero_slides').update({ display_order: a.display_order }).eq('id', a.id);
+    await db.from('hero_slides').update({ display_order: b.display_order }).eq('id', b.id);
+  }catch(e){ console.error(e); }
+}
+async function adminSaveSlide(id){
+  const slide = ADMIN_SLIDES.find(s => s.id === id);
+  if(!slide) return;
+  const btn = document.getElementById('slidesave-'+id);
+  if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+  try{
+    const desktopFile = document.getElementById(`slidefile-${id}-desktop`).files[0];
+    const mobileFile = document.getElementById(`slidefile-${id}-mobile`).files[0];
+    if(desktopFile){
+      const path = `${id}-desktop-${Date.now()}.${(desktopFile.name.split('.').pop()||'jpg')}`;
+      const { error } = await db.storage.from('hero-slides').upload(path, desktopFile, { upsert:true });
+      if(error) throw error;
+      slide.image_url = db.storage.from('hero-slides').getPublicUrl(path).data.publicUrl;
+    }
+    if(mobileFile){
+      const path = `${id}-mobile-${Date.now()}.${(mobileFile.name.split('.').pop()||'jpg')}`;
+      const { error } = await db.storage.from('hero-slides').upload(path, mobileFile, { upsert:true });
+      if(error) throw error;
+      slide.mobile_image_url = db.storage.from('hero-slides').getPublicUrl(path).data.publicUrl;
+    }
+    const startVal = document.getElementById('slide-start-'+id).value;
+    const endVal = document.getElementById('slide-end-'+id).value;
+    const payload = {
+      image_url: slide.image_url,
+      mobile_image_url: slide.mobile_image_url || null,
+      alt_text: document.getElementById('slide-alt-'+id).value.trim(),
+      title: document.getElementById('slide-title-'+id).value.trim(),
+      subtitle: document.getElementById('slide-subtitle-'+id).value.trim(),
+      button_text: document.getElementById('slide-btntext-'+id).value.trim(),
+      button_url: document.getElementById('slide-btnurl-'+id).value.trim(),
+      start_at: startVal ? new Date(startVal).toISOString() : null,
+      end_at: endVal ? new Date(endVal).toISOString() : null,
+      is_active: document.getElementById('slide-active-'+id).checked,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await db.from('hero_slides').update(payload).eq('id', id);
+    if(error) throw error;
+    Object.assign(slide, payload);
+    showToast("Slide enregistré");
+  }catch(e){
+    showToast("Échec de l'enregistrement du slide");
+    console.error(e);
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  renderAdminSlidesList();
+}
+async function adminDeleteSlide(id){
+  if(!window.confirm("Supprimer définitivement ce slide ?")) return;
+  try{
+    const { error } = await db.from('hero_slides').delete().eq('id', id);
+    if(error) throw error;
+    ADMIN_SLIDES = ADMIN_SLIDES.filter(s => s.id !== id);
+    renderAdminSlidesList();
+    showToast("Slide supprimé");
+  }catch(e){
+    showToast("Échec de la suppression");
+    console.error(e);
+  }
+}
+async function adminAddSlide(){
+  try{
+    const maxOrder = ADMIN_SLIDES.reduce((m,s)=>Math.max(m,s.display_order||0), 0);
+    const { data, error } = await db.from('hero_slides').insert({
+      image_url: 'https://placehold.co/1600x700?text=Ajoutez+une+image',
+      title: 'Nouveau slide', display_order: maxOrder + 1, is_active: false
+    }).select().single();
+    if(error) throw error;
+    ADMIN_SLIDES.push(data);
+    renderAdminSlidesList();
+    setTimeout(()=> toggleAdminSlideEdit(data.id), 50);
+  }catch(e){
+    showToast("Échec de la création du slide");
+    console.error(e);
+  }
+}
+
+async function renderAdminCustomers(){
+  const el = document.getElementById('adminTab-customers');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ La liste des clients nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('customer_summary').select('*').order('last_order_at', { ascending:false });
+    if(error) throw error;
+    if(!data || data.length === 0){
+      el.innerHTML = `<div class="admin-note">Les clients apparaissent ici automatiquement dès leur première commande.</div><p class="card-sub">Aucun client pour le moment.</p>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="admin-note">Calculé automatiquement à partir des commandes (le numéro de téléphone identifie chaque client).</div>
+      ${data.map(c => `
+        <div class="admin-order-card">
+          <div class="admin-order-head">
+            <strong>${c.latest_name || 'Client'}</strong>
+            <span class="mono">${c.order_count} commande${c.order_count>1?'s':''}</span>
+          </div>
+          <div class="card-sub">${c.phone || ''}${c.latest_address ? ' · ' + c.latest_address : ''}</div>
+          <div class="cart-total-row"><span>Total dépensé</span><span class="amt">$${Number(c.total_spent||0).toFixed(2)}</span></div>
+          <div class="card-sub">Première commande : ${new Date(c.first_order_at).toLocaleDateString('fr-FR')} · Dernière : ${new Date(c.last_order_at).toLocaleDateString('fr-FR')}</div>
+        </div>
+      `).join('')}
+    `;
+  }catch(e){
+    el.innerHTML = `<div class="admin-note">Échec du chargement des clients.</div>`;
+    console.error(e);
+  }
+}
 function renderAdminContent(){
   const c = SITE_CONTENT;
   const note = SUPABASE_ENABLED
@@ -963,7 +1489,7 @@ function adminItemRowHTML(kind, item){
   return `
   <div class="admin-item-row" id="adminrow-${item.id}">
     <div class="admin-item-summary" onclick="toggleAdminEdit('${item.id}')">
-      <span>${item.name || '(sans nom)'}</span>
+      <span>${item.name || '(sans nom)'} ${item.code ? `<span class="item-code-tag">${item.code}</span>` : ''}</span>
       <span class="admin-item-price">${priceLabel}</span>
       ${!isService && item.inStock===false ? '<span class="stock-flag" style="position:static;">Rupture</span>' : ''}
     </div>
@@ -1114,8 +1640,23 @@ async function getOrdersForAdmin(){
     try{
       const { data, error } = await db.from('orders').select('*').order('created_at', { ascending:false }).limit(500);
       if(error) throw error;
+
+      let paymentsByOrder = {};
+      try{
+        const { data: pay } = await db.from('payments').select('*').order('created_at', { ascending:false });
+        (pay||[]).forEach(p => { if(!paymentsByOrder[p.order_id]) paymentsByOrder[p.order_id] = p; });
+      }catch(e){ console.warn('payments fetch failed:', e); }
+
+      let uploadCountByOrder = {};
+      try{
+        const { data: uploads } = await db.from('order_uploads').select('order_id');
+        (uploads||[]).forEach(u => { uploadCountByOrder[u.order_id] = (uploadCountByOrder[u.order_id]||0) + 1; });
+      }catch(e){ console.warn('order_uploads fetch failed:', e); }
+
       return data.map(row => ({
         id: row.id,
+        code: row.code,
+        status: row.status,
         date: new Date(row.created_at).getTime(),
         customerName: row.customer_name,
         customerPhone: row.customer_phone,
@@ -1124,7 +1665,9 @@ async function getOrdersForAdmin(){
         total: Number(row.total || 0),
         exchangeRate: Number(row.exchange_rate || SETTINGS.exchangeRate),
         payment: row.payment,
-        delivery: row.delivery
+        delivery: row.delivery,
+        paymentRecord: paymentsByOrder[row.id] || null,
+        uploadCount: uploadCountByOrder[row.id] || 0
       }));
     }catch(e){
       console.warn('Supabase orders fetch failed, falling back to local log:', e);
@@ -1149,19 +1692,85 @@ async function renderAdminOrders(){
     ${orders.length === 0 ? '<p class="card-sub">Aucune commande enregistrée.</p>' : orders.map(orderRowHTML).join('')}
   `;
 }
+const ORDER_STATUSES = [
+  'En attente','Confirmée','Paiement en attente','Paiement confirmé',
+  'En préparation','En production','Prête','En livraison','Livrée',
+  'Annulée','Refusée'
+];
+const PAYMENT_STATUSES = ['En attente','Confirmé','Refusé','Remboursé'];
 function orderRowHTML(o){
   const rate = o.exchangeRate || SETTINGS.exchangeRate;
   const htg = new Intl.NumberFormat('fr-FR').format(Math.round((o.total||0) * rate));
+  const statusSelect = (o.id && SUPABASE_ENABLED)
+    ? `<select class="order-status-select" onchange="adminUpdateOrderStatus(${o.id}, this.value)">
+        ${ORDER_STATUSES.map(s => `<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
+       </select>`
+    : `<span class="item-code-tag">${o.status || '—'}</span>`;
+  const paymentSelect = (o.paymentRecord && SUPABASE_ENABLED)
+    ? `<select class="order-status-select" onchange="adminUpdatePaymentStatus(${o.paymentRecord.id}, this.value)">
+        ${PAYMENT_STATUSES.map(s => `<option value="${s}" ${s===o.paymentRecord.status?'selected':''}>${s}</option>`).join('')}
+       </select>`
+    : '';
   return `<div class="admin-order-card">
     <div class="admin-order-head">
       <strong>${o.customerName || 'Client'}</strong>
       <span class="mono">${new Date(o.date).toLocaleString('fr-FR')}</span>
     </div>
+    ${o.code ? `<div class="item-code-tag" style="margin:4px 0;">${o.code}</div>` : ''}
     <div class="card-sub">${o.customerPhone || ''}${o.customerAddress ? ' · ' + o.customerAddress : ''}</div>
     <ul class="admin-list">${(o.items||[]).map(i => `<li>${i.name} × ${i.qty}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('')}</ul>
     <div class="cart-total-row"><span>Total</span><span class="amt">$${(o.total||0).toFixed(2)}<span class="price-htg">≈ ${htg} HTG</span></span></div>
-    <div class="card-sub">Paiement : ${o.payment || '—'} · ${o.delivery || '—'}</div>
+    <div class="card-sub">Livraison : ${o.delivery || '—'}</div>
+    ${o.uploadCount > 0 ? `
+      <button class="btn btn-ghost" style="margin-top:10px;" onclick="adminViewOrderFiles(${o.id}, this)">📎 Voir les ${o.uploadCount} fichier${o.uploadCount>1?'s':''} joint${o.uploadCount>1?'s':''}</button>
+      <div id="orderfiles-${o.id}" style="margin-top:10px;"></div>
+    ` : ''}
+    <div class="form-field" style="margin-top:10px;"><label>Statut de la commande</label>${statusSelect}</div>
+    ${paymentSelect ? `<div class="form-field"><label>Statut du paiement (${o.payment || '—'})</label>${paymentSelect}</div>` : `<div class="card-sub">Paiement : ${o.payment || '—'}</div>`}
   </div>`;
+}
+async function adminViewOrderFiles(orderId, btnEl){
+  const container = document.getElementById('orderfiles-'+orderId);
+  if(!container) return;
+  if(container.innerHTML){ container.innerHTML = ''; return; }
+  container.innerHTML = '<p class="card-sub">Chargement…</p>';
+  try{
+    const { data: files, error } = await db.from('order_uploads').select('*').eq('order_id', orderId);
+    if(error) throw error;
+    if(!files || files.length === 0){ container.innerHTML = '<p class="card-sub">Aucun fichier.</p>'; return; }
+    const links = [];
+    for(const f of files){
+      const { data: signed, error: signErr } = await db.storage.from('order-uploads').createSignedUrl(f.storage_path, 3600);
+      if(signErr){ console.warn(signErr); continue; }
+      links.push(`<li><a href="${signed.signedUrl}" target="_blank" rel="noopener">${f.original_filename || 'Fichier'}</a> <span class="card-sub">(${Math.round((f.size_bytes||0)/1024)} Ko, lien valable 1h)</span></li>`);
+    }
+    container.innerHTML = `<ul class="admin-list">${links.join('')}</ul>`;
+  }catch(e){
+    container.innerHTML = '<p class="card-sub">Échec du chargement des fichiers.</p>';
+    console.error(e);
+  }
+}
+async function adminUpdatePaymentStatus(paymentId, newStatus){
+  if(!SUPABASE_ENABLED) return;
+  try{
+    const { error } = await db.from('payments').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', paymentId);
+    if(error) throw error;
+    showToast("Statut de paiement mis à jour");
+  }catch(e){
+    showToast("Échec de la mise à jour du paiement");
+    console.error(e);
+  }
+}
+async function adminUpdateOrderStatus(orderId, newStatus){
+  if(!SUPABASE_ENABLED) return;
+  try{
+    const { error } = await db.from('orders').update({ status: newStatus }).eq('id', orderId);
+    if(error) throw error;
+    showToast("Statut mis à jour");
+  }catch(e){
+    showToast("Échec de la mise à jour du statut");
+    console.error(e);
+  }
 }
 async function adminClearOrders(){
   const msg = SUPABASE_ENABLED
@@ -1229,6 +1838,13 @@ function renderAdminSettings(){
     </div>
     <div class="admin-note">Ce taux sert à convertir automatiquement tous les prix (produits et services) affichés en gourdes sur le site. Mettez-le à jour régulièrement pour rester proche du taux réel du marché.</div>
 
+    <h3>Slideshow d'accueil</h3>
+    <label class="check-row"><input type="checkbox" id="s-ss-autoplay" ${SETTINGS.slideshowAutoplay!==false?'checked':''}> Défilement automatique</label>
+    <div class="form-field"><label>Durée par image (millisecondes)</label><input type="number" step="500" min="1000" id="s-ss-duration" value="${SETTINGS.slideshowDurationMs||5000}"></div>
+    <label class="check-row"><input type="checkbox" id="s-ss-arrows" ${SETTINGS.slideshowArrows!==false?'checked':''}> Flèches précédent/suivant</label>
+    <label class="check-row"><input type="checkbox" id="s-ss-dots" ${SETTINGS.slideshowDots!==false?'checked':''}> Points indicateurs</label>
+    <label class="check-row"><input type="checkbox" id="s-ss-loop" ${SETTINGS.slideshowLoop!==false?'checked':''}> Boucle continue</label>
+
     <button class="btn btn-primary" id="save-settings-btn" onclick="adminSaveSettings()">Enregistrer</button>
 
     ${pwSection}
@@ -1239,13 +1855,21 @@ async function adminSaveSettings(){
   SETTINGS.whatsapp = val || SETTINGS.whatsapp;
   const rateVal = parseFloat(document.getElementById('s-rate').value);
   if(rateVal && rateVal > 0) SETTINGS.exchangeRate = rateVal;
+  SETTINGS.slideshowAutoplay = document.getElementById('s-ss-autoplay').checked;
+  SETTINGS.slideshowDurationMs = parseInt(document.getElementById('s-ss-duration').value) || 5000;
+  SETTINGS.slideshowArrows = document.getElementById('s-ss-arrows').checked;
+  SETTINGS.slideshowDots = document.getElementById('s-ss-dots').checked;
+  SETTINGS.slideshowLoop = document.getElementById('s-ss-loop').checked;
 
   if(SUPABASE_ENABLED){
     const btn = document.getElementById('save-settings-btn');
     if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
     try{
       const { error } = await db.from('settings').upsert({
-        id: 1, whatsapp: SETTINGS.whatsapp, exchange_rate: SETTINGS.exchangeRate
+        id: 1, whatsapp: SETTINGS.whatsapp, exchange_rate: SETTINGS.exchangeRate,
+        slideshow_autoplay: SETTINGS.slideshowAutoplay, slideshow_duration_ms: SETTINGS.slideshowDurationMs,
+        slideshow_arrows: SETTINGS.slideshowArrows, slideshow_dots: SETTINGS.slideshowDots,
+        slideshow_loop: SETTINGS.slideshowLoop
       });
       if(error) throw error;
     }catch(e){
@@ -1285,7 +1909,7 @@ if(emailField) emailField.style.display = SUPABASE_ENABLED ? 'block' : 'none';
 
 if(SUPABASE_ENABLED){
   refreshCatalog();
-  refreshSettings();
+  refreshSettings().then(initHeroSlideshow);
   refreshSiteContent();
 } else {
   console.info("Supabase non configuré — le site fonctionne en mode local uniquement. Voir schema-supabase.sql pour activer la synchronisation centralisée.");

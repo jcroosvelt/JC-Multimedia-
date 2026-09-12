@@ -86,10 +86,24 @@
     <a href="/#services">Services</a>
     <a href="/#apropos">À propos</a>
     <a href="/faq">FAQ</a>
+    <a href="/suivi">Suivre ma commande</a>
     <a href="/#contact">Contact</a>
   </nav>
 </div>
 
+<nav class="breadcrumb" aria-label="Fil d'Ariane">
+  <a href="/">Accueil</a> <span>/</span> <span aria-current="page">FAQ</span>
+</nav>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type":"ListItem","position":1,"name":"Accueil","item":"https://jc-multimedia.vercel.app/"},
+    {"@type":"ListItem","position":2,"name":"FAQ","item":"https://jc-multimedia.vercel.app/faq"}
+  ]
+}
+</script>
 <section class="section page-section">
   <a href="/" class="page-back">← Retour à l'accueil</a>
   <h1>Foire aux questions</h1>
@@ -150,6 +164,7 @@
         <a href="/#services">Services</a>
         <a href="/#apropos">À propos</a>
         <a href="/faq">FAQ</a>
+        <a href="/suivi">Suivre ma commande</a>
         <a href="/#contact">Contact</a>
       </nav>
     </div>
