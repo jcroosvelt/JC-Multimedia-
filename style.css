@@ -403,6 +403,12 @@ footer nav a:hover{color:var(--amber);}
 .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
 /* ---------- search bars ---------- */
 .search-bar{margin-bottom:18px;}
+.portfolio-filters{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;}
+.filter-chip{
+  padding:7px 14px; border-radius:999px; border:1px solid var(--line); background:#fff;
+  color:var(--muted); font-size:.82rem; font-weight:600; cursor:pointer;
+}
+.filter-chip.active{background:var(--navy); border-color:var(--navy); color:#fff;}
 .search-bar input{
   width:100%; max-width:360px; padding:11px 14px; border-radius:10px;
   border:1px solid var(--line); background:var(--surface2); color:var(--text); font-size:.92rem;

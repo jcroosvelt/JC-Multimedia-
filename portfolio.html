@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nos services — JC Multimedia</title>
-<meta name="description" content="Tous les services JC Multimedia : impression, personnalisation, graphisme, web design et plus.">
+<title>Portfolio — JC Multimedia</title>
+<meta name="description" content="Découvrez nos réalisations en branding, graphisme, web design et personnalisation — le portfolio de JC Multimedia.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="JC Multimedia">
-<meta property="og:title" content="Nos services — JC Multimedia">
-<meta property="og:description" content="Tous les services JC Multimedia : impression, personnalisation, graphisme, web design et plus.">
+<meta property="og:title" content="Portfolio — JC Multimedia">
+<meta property="og:description" content="Découvrez nos réalisations en branding, graphisme, web design et personnalisation — le portfolio de JC Multimedia.">
 <meta property="og:image" id="ogImageMeta" content="">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JC Multimedia">
-<meta name="twitter:description" content="Tous les services JC Multimedia : impression, personnalisation, graphisme, web design et plus.">
+<meta name="twitter:description" content="Découvrez nos réalisations en branding, graphisme, web design et personnalisation.">
 <meta name="twitter:image" id="twitterImageMeta" content="">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" id="faviconLink" href="">
 <link rel="apple-touch-icon" id="appleTouchIconLink" href="">
-<link rel="canonical" id="canonicalLink" href="https://jc-multimedia.vercel.app/services">
+<link rel="canonical" id="canonicalLink" href="https://jc-multimedia.vercel.app/portfolio">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -39,7 +39,7 @@
 <link rel="stylesheet" href="/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
-<body data-page="services">
+<body data-page="portfolio">
 
 <div class="topstrip">
   <a href="https://www.instagram.com/jcmultimediaht?igsi=MXJiNzlyMmp0aXBkaQ==" data-social="instagram" target="_blank" rel="noopener" title="Instagram" aria-label="Instagram">
@@ -93,7 +93,7 @@
 </div>
 
 <nav class="breadcrumb" aria-label="Fil d'Ariane">
-  <a href="/">Accueil</a> <span>/</span> <span aria-current="page">Nos services</span>
+  <a href="/">Accueil</a> <span>/</span> <span aria-current="page">Portfolio</span>
 </nav>
 <script type="application/ld+json">
 {
@@ -101,18 +101,16 @@
   "@type": "BreadcrumbList",
   "itemListElement": [
     {"@type":"ListItem","position":1,"name":"Accueil","item":"https://jc-multimedia.vercel.app/"},
-    {"@type":"ListItem","position":2,"name":"Nos services","item":"https://jc-multimedia.vercel.app/services"}
+    {"@type":"ListItem","position":2,"name":"Portfolio","item":"https://jc-multimedia.vercel.app/portfolio"}
   ]
 }
 </script>
 <section class="section page-section wide-page">
   <a href="/" class="page-back">← Retour à l'accueil</a>
-  <h1 id="servicesTitleText">Nos services</h1>
-  <p id="servicesIntroText" class="card-sub"></p>
-  <div class="search-bar">
-    <input type="search" id="serviceSearchAll" placeholder="Rechercher un service…" oninput="renderGrid()" aria-label="Rechercher un service">
-  </div>
-  <div class="grid" id="serviceGridAll"></div>
+  <h1 id="portfolioTitleText">Notre portfolio</h1>
+  <p id="portfolioIntroText" class="card-sub"></p>
+  <div class="portfolio-filters" id="portfolioFilters"></div>
+  <div class="grid" id="portfolioGrid"></div>
 </section>
 
 <footer id="contact">

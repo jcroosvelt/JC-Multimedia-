@@ -158,6 +158,75 @@ let SLIDES = [];
 let slideIndex = 0;
 let slideTimer = null;
 
+/* =========================================================
+   PORTFOLIO — réalisations, gérées depuis l'admin, affichées
+   en grille avec filtre par catégorie et fenêtre de détail.
+   ========================================================= */
+let PORTFOLIO_ITEMS = [];
+let PORTFOLIO_ACTIVE_CATEGORY = 'Tous';
+async function initPortfolio(){
+  const grid = document.getElementById('portfolioGrid');
+  if(!grid || !SUPABASE_ENABLED) return;
+  try{
+    const { data, error } = await db.from('portfolio_items').select('*').order('display_order', { ascending:true });
+    if(error) throw error;
+    PORTFOLIO_ITEMS = data || [];
+  }catch(e){ console.warn('portfolio fetch failed:', e); return; }
+  renderPortfolio();
+}
+function renderPortfolio(){
+  const grid = document.getElementById('portfolioGrid');
+  const filtersEl = document.getElementById('portfolioFilters');
+  if(!grid) return;
+  const categories = ['Tous', ...new Set(PORTFOLIO_ITEMS.map(p => p.category).filter(Boolean))];
+  if(filtersEl){
+    filtersEl.innerHTML = categories.length > 1 ? categories.map(cat => `<button class="filter-chip ${cat===PORTFOLIO_ACTIVE_CATEGORY?'active':''}" onclick="setPortfolioCategory('${cat.replace(/'/g,"\\'")}')">${cat}</button>`).join('') : '';
+  }
+  const filtered = PORTFOLIO_ACTIVE_CATEGORY === 'Tous' ? PORTFOLIO_ITEMS : PORTFOLIO_ITEMS.filter(p => p.category === PORTFOLIO_ACTIVE_CATEGORY);
+  grid.innerHTML = filtered.length
+    ? filtered.map(portfolioCardHTML).join('')
+    : '<p class="card-sub">Aucune réalisation à afficher pour le moment — revenez bientôt !</p>';
+}
+function setPortfolioCategory(cat){
+  PORTFOLIO_ACTIVE_CATEGORY = cat;
+  renderPortfolio();
+}
+function portfolioCardHTML(p){
+  const imgs = Array.isArray(p.image_urls) ? p.image_urls : [];
+  const thumb = imgs[0];
+  const title = escapeHtml(p.title);
+  const category = escapeHtml(p.category);
+  return `
+    <div class="card">
+      <div class="thumb" style="cursor:pointer;" onclick="showPortfolioDetail(${p.id})" role="button" tabindex="0" aria-label="Voir ${title}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPortfolioDetail(${p.id})}">
+        ${p.category ? `<span class="promo-flag" style="background:var(--navy);">${category}</span>` : ''}
+        ${thumb ? `<img src="${thumb}" alt="${title}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
+      </div>
+      <div class="body">
+        <h3>${title}</h3>
+        ${p.client_name ? `<p class="card-sub">${escapeHtml(p.client_name)}</p>` : ''}
+      </div>
+    </div>
+  `;
+}
+function showPortfolioDetail(id){
+  const p = PORTFOLIO_ITEMS.find(x => x.id === id);
+  if(!p) return;
+  const imgs = Array.isArray(p.image_urls) ? p.image_urls : [];
+  const title = escapeHtml(p.title);
+  openStep(`
+    <div class="quickview">
+      ${imgs.length ? `<div class="thumb qv-thumb"><img id="galleryMainImg" src="${imgs[0]}" alt="${title}" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:12px;"></div>` : ''}
+      ${imgs.length > 1 ? `<div class="gallery-thumbs">${imgs.map((u,i)=>`<button class="gallery-thumb-btn ${i===0?'active':''}" onclick='setGalleryImage(${JSON.stringify(imgs)}, ${i}, this)'><img src="${u}" alt=""></button>`).join('')}</div>` : ''}
+      <h3 style="margin-right:0;">${title}</h3>
+      ${p.category ? `<p class="item-code-tag" style="display:inline-block;">${escapeHtml(p.category)}</p>` : ''}
+      ${p.client_name ? `<p class="card-sub">Client : ${escapeHtml(p.client_name)}</p>` : ''}
+      ${p.description ? `<p class="card-sub" style="font-size:.92rem;">${escapeHtml(p.description).replace(/\n/g,'<br>')}</p>` : ''}
+      ${p.project_url ? `<a class="btn btn-ghost" href="${escapeHtml(p.project_url)}" target="_blank" rel="noopener">Voir le projet</a>` : ''}
+    </div>
+  `, title);
+}
+
 async function initHeroSlideshow(){
   const section = document.getElementById('heroSlideshow');
   if(!section || !SUPABASE_ENABLED) return;
@@ -183,12 +252,12 @@ function renderSlideshow(){
     const img = (isMobile && s.mobile_image_url) ? s.mobile_image_url : s.image_url;
     const hasCaption = s.title || s.subtitle || (s.button_text && s.button_url);
     return `<div class="slide">
-      <img src="${img}" alt="${(s.alt_text||'').replace(/"/g,'&quot;')}" loading="${i===0?'eager':'lazy'}">
+      <img src="${img}" alt="${escapeHtml(s.alt_text)}" loading="${i===0?'eager':'lazy'}">
       ${hasCaption ? `
         <div class="slide-caption">
-          ${s.title ? `<h2>${s.title}</h2>` : ''}
-          ${s.subtitle ? `<p>${s.subtitle}</p>` : ''}
-          ${(s.button_text && s.button_url) ? `<a class="btn btn-primary" href="${s.button_url}">${s.button_text}</a>` : ''}
+          ${s.title ? `<h2>${escapeHtml(s.title)}</h2>` : ''}
+          ${s.subtitle ? `<p>${escapeHtml(s.subtitle)}</p>` : ''}
+          ${(s.button_text && s.button_url) ? `<a class="btn btn-primary" href="${escapeHtml(s.button_url)}">${escapeHtml(s.button_text)}</a>` : ''}
         </div>` : ''}
     </div>`;
   }).join('');
@@ -277,6 +346,118 @@ function applySiteContent(){
 }
 
 /* =========================================================
+   CONTENU ÉDITABLE DE CHAQUE PAGE (Boutique, Services, FAQ,
+   pages légales, Suivi de commande) — modifiable depuis
+   l'espace admin, onglet "Contenu"
+   ========================================================= */
+const DEFAULT_PAGE_CONTENT = {
+  boutique_title: "Boutique",
+  boutique_intro: "",
+  services_title: "Nos services",
+  services_intro: "",
+  portfolio_title: "Notre portfolio",
+  portfolio_intro: "Un aperçu de nos réalisations récentes en branding, graphisme, web design et personnalisation.",
+  faq_title: "Foire aux questions",
+  faq_intro: "",
+  faq_items: [
+    {question:"Quels sont les délais de livraison ?", answer:"Comptez généralement 24 à 72h dans la région métropolitaine de Port-au-Prince (Pétion-Ville, Delmas, Carrefour, Juvénat…), selon la disponibilité du produit. Le délai exact vous est confirmé lors de l'étape de commande sur WhatsApp."},
+    {question:"Quelles zones desservez-vous ?", answer:"Nous livrons dans la région métropolitaine de Port-au-Prince, notamment Pétion-Ville, Juvénat, Delmas et Carrefour. Pour une zone plus éloignée, contactez-nous sur WhatsApp pour vérifier la faisabilité et les frais éventuels."},
+    {question:"Puis-je récupérer ma commande en boutique ?", answer:"Oui. Choisissez « Récupérer sur place » lors de la commande, puis présentez-vous à l'un de nos deux points : 123, Rue Lambert, Juvénat (Pétion-Ville) ou 10, Brochette 99 (Carrefour)."},
+    {question:"Quelle est votre politique de retour ?", answer:"Les articles défectueux peuvent être échangés sous 7 jours avec preuve d'achat. Les produits personnalisés (gravure, impression, coques sur mesure) ne sont repris qu'en cas de défaut de fabrication."},
+    {question:"Quels moyens de paiement acceptez-vous ?", answer:"MonCash, Natcash, espèces (Cash), virement bancaire et carte bancaire."},
+    {question:"Comment passer commande ?", answer:"Ajoutez vos articles ou services au panier, indiquez si certains doivent être personnalisés, choisissez votre mode de paiement puis livraison ou retrait. La commande est ensuite envoyée en message pré-rempli sur WhatsApp pour confirmation."}
+  ],
+  confidentialite_title: "Politique de confidentialité",
+  confidentialite_content: "JC Multimedia respecte votre vie privée.",
+  conditions_title: "Conditions générales de vente",
+  conditions_content: "",
+  livraison_title: "Livraison & retours",
+  livraison_content: "",
+  suivi_title: "Suivre ma commande",
+  suivi_intro: "Entrez le code de votre commande (ex : JC-PRC1001) et le numéro de téléphone utilisé lors de la commande."
+};
+const PAGE_CONTENT_STORAGE_KEY = "jc_multimedia_page_content_v1";
+function loadPageContentLocal(){ return { ...DEFAULT_PAGE_CONTENT, ...(safeGet(PAGE_CONTENT_STORAGE_KEY) || {}) }; }
+function savePageContentLocal(){ safeSet(PAGE_CONTENT_STORAGE_KEY, PAGE_CONTENT); }
+let PAGE_CONTENT = loadPageContentLocal();
+
+async function fetchPageContentFromSupabase(){
+  if(!SUPABASE_ENABLED) return null;
+  try{
+    const { data, error } = await db.from('page_content').select('*');
+    if(error) throw error;
+    const map = {};
+    (data||[]).forEach(row => { map[row.key] = row.key === 'faq_items' ? safeParseJSON(row.value) : row.value; });
+    return map;
+  }catch(e){
+    console.warn('Supabase page_content fetch failed, using local cache/defaults:', e);
+    return null;
+  }
+}
+function safeParseJSON(str){
+  try{ return JSON.parse(str); }catch(e){ return null; }
+}
+async function refreshPageContent(){
+  const remote = await fetchPageContentFromSupabase();
+  if(remote){
+    Object.keys(remote).forEach(k => { if(remote[k] != null) PAGE_CONTENT[k] = remote[k]; });
+    savePageContentLocal();
+  }
+  applyPageContent();
+}
+function escapeHtml(s){
+  return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function renderSimpleContentInto(elId, rawText){
+  const el = document.getElementById(elId);
+  if(!el || rawText == null) return;
+  const escaped = escapeHtml(rawText);
+  const blocks = escaped.split(/\n\s*\n/).filter(b => b.trim());
+  el.innerHTML = blocks.map(block => {
+    const trimmed = block.trim();
+    if(trimmed.startsWith('## ')){
+      const lines = trimmed.split('\n');
+      const heading = lines[0].slice(3);
+      const rest = lines.slice(1).join('<br>');
+      return `<h3>${heading}</h3>` + (rest ? `<p>${rest}</p>` : '');
+    }
+    return `<p>${trimmed.replace(/\n/g,'<br>')}</p>`;
+  }).join('\n');
+}
+function renderFaqItems(items){
+  const container = document.getElementById('faqItemsContainer');
+  if(!container) return;
+  if(!Array.isArray(items)) return;
+  container.innerHTML = items.map((it, i) => `
+    <details class="faq-item" ${i===0?'open':''}>
+      <summary>${escapeHtml(it.question)}</summary>
+      <p>${escapeHtml(it.answer).replace(/\n/g,'<br>')}</p>
+    </details>
+  `).join('');
+}
+function applyPageContent(){
+  const c = PAGE_CONTENT;
+  const setText = (id, val) => { const el = document.getElementById(id); if(el && val != null) el.textContent = val; };
+  setText('boutiqueTitleText', c.boutique_title);
+  setText('boutiqueIntroText', c.boutique_intro);
+  setText('servicesTitleText', c.services_title);
+  setText('servicesIntroText', c.services_intro);
+  setText('portfolioTitleText', c.portfolio_title);
+  setText('portfolioIntroText', c.portfolio_intro);
+  setText('faqTitleText', c.faq_title);
+  setText('faqIntroText', c.faq_intro);
+  setText('confidentialiteTitleText', c.confidentialite_title);
+  setText('conditionsTitleText', c.conditions_title);
+  setText('livraisonTitleText', c.livraison_title);
+  setText('suiviTitleText', c.suivi_title);
+  setText('suiviIntroText', c.suivi_intro);
+  renderSimpleContentInto('confidentialiteContentBlock', c.confidentialite_content);
+  renderSimpleContentInto('conditionsContentBlock', c.conditions_content);
+  renderSimpleContentInto('livraisonContentBlock', c.livraison_content);
+  renderFaqItems(c.faq_items);
+}
+
+/* =========================================================
    CATALOGUE PAR DÉFAUT — modifiable depuis l'espace admin
    (les modifications admin sont sauvegardées et remplacent ces
    valeurs par défaut sur cet appareil)
@@ -297,7 +478,8 @@ function rowToItem(row){
   const item = {
     id: row.id, name: row.name, code: row.code || null,
     imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(Boolean) : (row.image_url ? [row.image_url] : []),
-    inStock: row.in_stock, customizable: row.customizable, promo: row.promo
+    inStock: row.in_stock, customizable: row.customizable, promo: row.promo,
+    seoTitle: row.seo_title || "", seoDescription: row.seo_description || ""
   };
   if(row.kind === 'services'){
     item.description = row.description;
@@ -317,7 +499,8 @@ function itemToRow(kind, item){
     price: kind === 'products' ? (item.price ?? 0) : null,
     old_price: kind === 'products' ? (item.oldPrice ?? null) : null,
     starting_price: kind === 'services' ? (item.startingPrice ?? 0) : null,
-    promo: !!item.promo, in_stock: item.inStock !== false, customizable: !!item.customizable
+    promo: !!item.promo, in_stock: item.inStock !== false, customizable: !!item.customizable,
+    seo_title: item.seoTitle || null, seo_description: item.seoDescription || null
   };
 }
 async function fetchCatalogFromSupabase(){
@@ -378,7 +561,8 @@ function saveCart(){ safeSet(CART_STORAGE_KEY, cart); }
    RENDER — carte partagée boutique/services, avec recherche et stock
    ========================================================= */
 function cardHTML(item){
-  const subText = item.utility || item.description || "";
+  const name = escapeHtml(item.name);
+  const subText = escapeHtml(item.utility || item.description || "");
   const outOfStock = item.inStock === false;
   const priceBlock = isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
@@ -388,13 +572,13 @@ function cardHTML(item){
        </div>`;
   return `
     <div class="card">
-      <a class="thumb" href="/article/${item.id}" aria-label="Voir la page de ${item.name}">
+      <a class="thumb" href="/article/${item.id}" aria-label="Voir la page de ${name}">
         ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
         ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
-        ${(item.imageUrls && item.imageUrls[0]) ? `<img src="${item.imageUrls[0]}" alt="${item.name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
+        ${(item.imageUrls && item.imageUrls[0]) ? `<img src="${item.imageUrls[0]}" alt="${name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
       </a>
       <div class="body">
-        <h3><a href="/article/${item.id}" class="card-title-link">${item.name}</a></h3>
+        <h3><a href="/article/${item.id}" class="card-title-link">${name}</a></h3>
         ${subText ? `<p class="card-sub">${subText}</p>` : ''}
         ${priceBlock}
         <div class="qty-row">
@@ -491,7 +675,8 @@ function showToast(msg){
 function renderItemDetail(id){
   const item = ALL_ITEMS[id];
   if(!item) return;
-  const subText = item.utility || item.description || "";
+  const name = escapeHtml(item.name);
+  const subText = escapeHtml(item.utility || item.description || "");
   const outOfStock = item.inStock === false;
   const images = (item.imageUrls && item.imageUrls.length) ? item.imageUrls : [];
   const priceBlock = isEstimate(item)
@@ -502,11 +687,11 @@ function renderItemDetail(id){
     <div class="item-detail-thumb">
       ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
       ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
-      <img id="galleryMainImg" src="${images[0]}" alt="${item.name}">
+      <img id="galleryMainImg" src="${images[0]}" alt="${name}">
     </div>
     ${images.length > 1 ? `
       <div class="gallery-thumbs">
-        ${images.map((url,i) => `<button class="gallery-thumb-btn ${i===0?'active':''}" data-idx="${i}" onclick="setGalleryImage(${JSON.stringify(images).replace(/"/g,'&quot;')}, ${i}, this)"><img src="${url}" alt=""></button>`).join('')}
+        ${images.map((url,i) => `<button class="gallery-thumb-btn ${i===0?'active':''}" data-idx="${i}" onclick='setGalleryImage(${JSON.stringify(images)}, ${i}, this)'><img src="${url}" alt=""></button>`).join('')}
       </div>` : ''}
   ` : `
     <div class="item-detail-thumb">
@@ -515,7 +700,20 @@ function renderItemDetail(id){
       <div class="no-image">Pas de photo</div>
     </div>`;
 
-  document.title = item.name + ' — JC Multimedia';
+  // SEO avancé : titre/description personnalisés par l'admin (onglet
+  // Catalogue), sinon générés automatiquement à partir des infos réelles
+  // de l'article — jamais de contenu inventé.
+  const seoTitle = (item.seoTitle && item.seoTitle.trim()) || `${item.name} — JC Multimedia`;
+  const seoDesc = (item.seoDescription && item.seoDescription.trim())
+    || (item.utility || item.description || `${item.name} — disponible chez JC Multimedia, Port-au-Prince.`);
+
+  document.title = seoTitle;
+  const setMeta = (id, val) => { const el = document.getElementById(id); if(el) el.setAttribute('content', val); };
+  setMeta('metaDescriptionTag', seoDesc);
+  setMeta('ogTitleMeta', seoTitle);
+  setMeta('ogDescriptionMeta', seoDesc);
+  setMeta('twitterTitleMeta', seoTitle);
+  setMeta('twitterDescriptionMeta', seoDesc);
   const canonicalEl = document.getElementById('canonicalLink');
   if(canonicalEl) canonicalEl.href = window.location.origin + '/article/' + id;
 
@@ -526,15 +724,15 @@ function renderItemDetail(id){
     breadcrumbEl.innerHTML = `
       <a href="/">Accueil</a> <span>/</span>
       <a href="${sectionPath}">${sectionLabel}</a> <span>/</span>
-      <span aria-current="page">${item.name}</span>
+      <span aria-current="page">${name}</span>
     `;
   }
-  injectItemStructuredData(item);
+  injectItemStructuredData(item, seoDesc);
 
   document.getElementById('itemDetailContent').innerHTML = `
     ${galleryHTML}
-    <h1>${item.name}</h1>
-    ${item.code ? `<p class="item-code-tag" style="display:inline-block; margin-bottom:10px;">${item.code}</p>` : ''}
+    <h1>${name}</h1>
+    ${item.code ? `<p class="item-code-tag" style="display:inline-block; margin-bottom:10px;">${escapeHtml(item.code)}</p>` : ''}
     ${subText ? `<p class="card-sub" style="font-size:1rem;">${subText}</p>` : ''}
     ${priceBlock}
     <div class="qty-row">
@@ -546,7 +744,7 @@ function renderItemDetail(id){
     <button class="btn btn-ghost" style="margin-top:12px;" onclick="copyItemLink()">Copier le lien de cette page</button>
   `;
 }
-function injectItemStructuredData(item){
+function injectItemStructuredData(item, description){
   const existing = document.getElementById('itemStructuredData');
   if(existing) existing.remove();
 
@@ -558,7 +756,7 @@ function injectItemStructuredData(item){
     "name": item.name,
     "url": window.location.origin + '/article/' + item.id
   };
-  if(item.utility || item.description) data.description = item.utility || item.description;
+  if(description || item.utility || item.description) data.description = description || item.utility || item.description;
   if(item.imageUrls && item.imageUrls.length) data.image = item.imageUrls;
   if(item.code) data[isService ? "serviceType" : "sku"] = item.code;
   if(!isService){
@@ -622,18 +820,18 @@ async function submitTrackOrder(){
 function renderTrackResult(o){
   const rate = o.exchange_rate || SETTINGS.exchangeRate;
   const htg = new Intl.NumberFormat('fr-FR').format(Math.round((o.total||0) * rate));
-  const items = (o.items||[]).map(i => `<li>${i.name} × ${i.qty}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('');
-  const history = (o.history||[]).map(h => `<li>${h.status} — ${new Date(h.changed_at).toLocaleString('fr-FR')}</li>`).join('');
+  const items = (o.items||[]).map(i => `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('');
+  const history = (o.history||[]).map(h => `<li>${escapeHtml(h.status)} — ${new Date(h.changed_at).toLocaleString('fr-FR')}</li>`).join('');
   document.getElementById('trackResult').innerHTML = `
     <div class="admin-order-card">
       <div class="admin-order-head">
-        <strong>${o.code}</strong>
+        <strong>${escapeHtml(o.code)}</strong>
         <span class="mono">${new Date(o.created_at).toLocaleDateString('fr-FR')}</span>
       </div>
-      <div class="item-code-tag" style="margin:6px 0; display:inline-block;">${o.status}</div>
+      <div class="item-code-tag" style="margin:6px 0; display:inline-block;">${escapeHtml(o.status)}</div>
       <ul class="admin-list">${items}</ul>
       <div class="cart-total-row"><span>Total</span><span class="amt">$${Number(o.total||0).toFixed(2)}<span class="price-htg">≈ ${htg} HTG</span></span></div>
-      <div class="card-sub">Paiement : ${o.payment || '—'} · ${o.delivery || '—'}</div>
+      <div class="card-sub">Paiement : ${escapeHtml(o.payment) || '—'} · ${escapeHtml(o.delivery) || '—'}</div>
       <h3 style="margin-bottom:6px;">Progression</h3>
       <ul class="admin-list">${history}</ul>
     </div>
@@ -784,12 +982,33 @@ function closeStep(){
   if(lastFocusedBeforeModal && lastFocusedBeforeModal.focus) lastFocusedBeforeModal.focus();
 }
 
+/* Fenêtre de confirmation maison — remplace les popups natives du
+   navigateur (moches et incohérentes avec le design) partout dans
+   l'admin. */
+let _pendingConfirmCallback = null;
+function showConfirmModal(message, onConfirm){
+  _pendingConfirmCallback = onConfirm;
+  openStep(`
+    <h3>${message}</h3>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="_pendingConfirmCallback=null; closeStep();">Annuler</button>
+      <button class="btn btn-primary" onclick="runPendingConfirm()">Confirmer</button>
+    </div>
+  `, "Confirmation");
+}
+function runPendingConfirm(){
+  const cb = _pendingConfirmCallback;
+  _pendingConfirmCallback = null;
+  closeStep();
+  if(cb) cb();
+}
+
 /* =========================================================
    ORDER FLOW: coordonnées -> personnalisation -> paiement -> livraison -> WhatsApp -> confirmation
    ========================================================= */
 function startOrderFlow(){
   const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
-  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[] };
+  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[], details:"" };
   showStepCustomerInfo();
 }
 function showStepCustomerInfo(){
@@ -825,13 +1044,13 @@ function collectCustomerInfo(){
   orderFlow.customerPhone = phone;
   orderFlow.customerAddress = address;
   const customizableInCart = cartEntries().filter(i => i.customizable);
-  if(customizableInCart.length > 0){ showStepCustomizeAsk(); } else { showStepPayment(); }
+  if(customizableInCart.length > 0){ showStepCustomizeAsk(); } else { showStepFiles(); }
 }
 function showStepCustomizeAsk(){
   openStep(`
     <h3>Souhaitez-vous personnaliser certains articles ?</h3>
     <button class="opt-btn" onclick="orderFlow.customize=true; showStepCustomizeList();">Oui</button>
-    <button class="opt-btn" onclick="orderFlow.customize=false; showStepPayment();">Non</button>
+    <button class="opt-btn" onclick="orderFlow.customize=false; showStepFiles();">Non</button>
   `, "Personnalisation des articles");
 }
 const MAX_UPLOAD_FILES = 3;
@@ -848,8 +1067,42 @@ function showStepCustomizeList(){
         ${i.name}
       </label>
     `).join('')}
-    <div class="form-field" style="margin-top:16px;">
-      <label>Joindre des fichiers (logo, photo, design…) — jusqu'à ${MAX_UPLOAD_FILES}, 5 Mo max chacun (images ou PDF)</label>
+    <div class="form-field" style="margin-top:14px;">
+      <label for="customizeNotes">Précisez ce que vous souhaitez (couleur, taille, texte à graver, style, délai souhaité…)</label>
+      <textarea id="customizeNotes" rows="4" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.9rem;" placeholder="Ex : logo en bleu marine, taille M, à livrer avant vendredi…">${orderFlow.customizationNotes || ''}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="showStepCustomizeAsk()">Retour</button>
+      <button class="btn btn-primary" onclick="collectCustomizeList()">Suivant</button>
+    </div>
+  `, "Articles à personnaliser");
+}
+function collectCustomizeList(){
+  orderFlow.customizedItems = Array.from(document.querySelectorAll('.check-row input:checked')).map(el => el.value);
+  orderFlow.customizationNotes = document.getElementById('customizeNotes').value.trim();
+  showStepFiles();
+}
+
+/* Étape toujours proposée, quel que soit l'article (produit ou
+   service) — le client peut décrire précisément ce qu'il veut et
+   joindre jusqu'à 3 fichiers (logo, photo, design…). Particulièrement
+   utile pour les services et les produits à personnaliser, mais
+   disponible pour toute commande. */
+function showStepFiles(){
+  const items = cartEntries();
+  const hasServices = items.some(i => isEstimate(i));
+  const hasCustomizable = items.some(i => i.customizable);
+  const helperText = (hasServices || hasCustomizable)
+    ? "Décrivez précisément ce que vous voulez (couleur, taille, texte, style, délai souhaité…) — utile pour vos services et vos articles à personnaliser."
+    : "Une précision à ajouter sur votre commande ? (optionnel)";
+  openStep(`
+    <h3>Détails de votre commande</h3>
+    <div class="form-field">
+      <label for="cfDetails">${helperText}</label>
+      <textarea id="cfDetails" rows="4" placeholder="Expliquez ce que vous souhaitez…" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.92rem;">${orderFlow.details || ''}</textarea>
+    </div>
+    <div class="form-field">
+      <label>Joindre des fichiers (logo, photo, design…) — jusqu'à ${MAX_UPLOAD_FILES}, 5 Mo max chacun (images ou PDF), facultatif</label>
       <div class="admin-image-row">
         ${[0,1,2].map(slot => `
           <div class="admin-image-slot">
@@ -858,13 +1111,21 @@ function showStepCustomizeList(){
           </div>
         `).join('')}
       </div>
-      <p id="cfileError" class="form-error" style="display:none;"></p>
     </div>
+    <p id="cfileError" class="form-error" style="display:none;"></p>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="showStepCustomizeAsk()">Retour</button>
-      <button class="btn btn-primary" onclick="collectCustomizeList()">Suivant</button>
+      <button class="btn btn-ghost" onclick="showStepFilesBack()">Retour</button>
+      <button class="btn btn-primary" onclick="collectStepFiles()">Suivant</button>
     </div>
-  `, "Articles à personnaliser");
+  `, "Détails de votre commande");
+}
+function collectStepFiles(){
+  orderFlow.details = document.getElementById('cfDetails').value.trim();
+  showStepPayment();
+}
+function showStepFilesBack(){
+  const hasCustomizable = cartEntries().some(i => i.customizable);
+  if(hasCustomizable){ showStepCustomizeAsk(); } else { showStepCustomerInfo(); }
 }
 function handleCustomizeFileChange(slot){
   const input = document.getElementById('cfile-'+slot);
@@ -887,18 +1148,13 @@ function handleCustomizeFileChange(slot){
   orderFlow.uploadFiles[slot] = file;
   document.getElementById('cfile-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
 }
-function collectCustomizeList(){
-  orderFlow.customizedItems = Array.from(document.querySelectorAll('.check-row input:checked')).map(el => el.value);
-  showStepPayment();
-}
 function showStepPayment(){
   const options = ["MonCash","Natcash","Cash","Virement Bancaire","Carte bancaire"];
-  const hasCustomizable = cartEntries().some(i=>i.customizable);
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.payment===o?'selected':''}" onclick="selectPayment('${o}')">${o}</button>`).join('')}
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="${hasCustomizable ? "showStepCustomizeAsk()" : "showStepCustomerInfo()"}">Retour</button>
+      <button class="btn btn-ghost" onclick="showStepFiles()">Retour</button>
       <button class="btn btn-primary" onclick="orderFlow.payment ? showStepDelivery() : null">Suivant</button>
     </div>
   `, "Mode de paiement");
@@ -953,6 +1209,7 @@ async function sendOrder(){
         exchange_rate: SETTINGS.exchangeRate,
         payment: orderFlow.payment,
         delivery: orderFlow.delivery,
+        details: orderFlow.details || null,
         idempotency_key: orderFlow.idempotencyKey
       }).select('id, code').single();
       if(error) throw error;
@@ -1030,21 +1287,35 @@ async function sendOrder(){
   };
   logOrderLocal(orderRecord);
 
-  let msg = "Bonjour JC Multimedia, je souhaite commander :%0A%0A";
-  if(orderCode) msg += `Code commande : ${orderCode}%0A%0A`;
-  msg += `Nom : ${orderFlow.customerName}%0ATéléphone : ${orderFlow.customerPhone}%0A`;
+  const SEP = "─────────────────────%0A";
+  let msg = `📋 *NOUVELLE COMMANDE — JC MULTIMEDIA*%0A${SEP}`;
+  if(orderCode) msg += `*Réf. commande :* ${orderCode}%0A%0A`;
+
+  msg += `*CLIENT*%0A`;
+  msg += `Nom : ${orderFlow.customerName}%0A`;
+  msg += `Téléphone : ${orderFlow.customerPhone}%0A`;
   if(orderFlow.customerAddress) msg += `Adresse : ${orderFlow.customerAddress}%0A`;
-  msg += `%0A`;
+  msg += `%0A${SEP}`;
+
+  msg += `*ARTICLES*%0A`;
   items.forEach(i => {
-    const tag = orderFlow.customizedItems.includes(i.id) ? " (à personnaliser)" : "";
-    const codeTag = i.code ? ` [${i.code}]` : "";
+    const tag = orderFlow.customizedItems.includes(i.id) ? " _(à personnaliser)_" : "";
+    const codeTag = i.code ? ` (${i.code})` : "";
     const lineTotal = unitPrice(i) * i.qty;
     const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatUSD(lineTotal)} (≈ ${formatHTG(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
-    msg += `• ${i.name}${codeTag}${tag} x${i.qty} — ${amount}%0A`;
+    msg += `▪ ${i.name}${codeTag} × ${i.qty}${tag}%0A   ${amount}%0A`;
   });
-  msg += `%0ATotal estimé : ${formatUSD(total)} (≈ ${formatHTG(total)})%0A`;
-  msg += `Mode de paiement : ${orderFlow.payment}%0A`;
+  msg += `%0A${SEP}`;
+
+  msg += `*Total estimé : ${formatUSD(total)}* (≈ ${formatHTG(total)})%0A`;
+  msg += `Paiement : ${orderFlow.payment}%0A`;
   msg += `Livraison : ${orderFlow.delivery}`;
+
+  if(orderFlow.details){
+    msg += `%0A%0A${SEP}*DÉTAILS DE LA DEMANDE*%0A${encodeURIComponent(orderFlow.details)}`;
+  }
+
+  msg += `%0A%0A${SEP}Merci pour votre confiance ! ✅%0ANotre équipe vous répond très vite pour confirmer votre commande.`;
 
   window.open(`https://wa.me/${SETTINGS.whatsapp}?text=${msg}`, "_blank");
 
@@ -1166,7 +1437,7 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','banner','orders','customers','settings'].forEach(t=>{
+  ['dashboard','catalog','content','banner','portfolio','orders','files','customers','settings'].forEach(t=>{
     document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
@@ -1174,7 +1445,9 @@ function showAdminTab(name){
   if(name==='catalog') renderAdminCatalog();
   if(name==='content') renderAdminContent();
   if(name==='banner') renderAdminBanner();
+  if(name==='portfolio') renderAdminPortfolio();
   if(name==='orders') renderAdminOrders();
+  if(name==='files') renderAdminFiles();
   if(name==='customers') renderAdminCustomers();
   if(name==='settings') renderAdminSettings();
 }
@@ -1308,17 +1581,18 @@ async function adminSaveSlide(id){
   renderAdminSlidesList();
 }
 async function adminDeleteSlide(id){
-  if(!window.confirm("Supprimer définitivement ce slide ?")) return;
-  try{
-    const { error } = await db.from('hero_slides').delete().eq('id', id);
-    if(error) throw error;
-    ADMIN_SLIDES = ADMIN_SLIDES.filter(s => s.id !== id);
-    renderAdminSlidesList();
-    showToast("Slide supprimé");
-  }catch(e){
-    showToast("Échec de la suppression");
-    console.error(e);
-  }
+  showConfirmModal("Supprimer définitivement ce slide ?", async () => {
+    try{
+      const { error } = await db.from('hero_slides').delete().eq('id', id);
+      if(error) throw error;
+      ADMIN_SLIDES = ADMIN_SLIDES.filter(s => s.id !== id);
+      renderAdminSlidesList();
+      showToast("Slide supprimé");
+    }catch(e){
+      showToast("Échec de la suppression");
+      console.error(e);
+    }
+  });
 }
 async function adminAddSlide(){
   try{
@@ -1333,6 +1607,233 @@ async function adminAddSlide(){
     setTimeout(()=> toggleAdminSlideEdit(data.id), 50);
   }catch(e){
     showToast("Échec de la création du slide");
+    console.error(e);
+  }
+}
+
+/* ---- Fichiers reçus (toutes commandes confondues) ---- */
+async function renderAdminFiles(){
+  const el = document.getElementById('adminTab-files');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ Cette page nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('order_uploads')
+      .select('*, orders(code, customer_name, customer_phone, created_at)')
+      .order('created_at', { ascending:false });
+    if(error) throw error;
+    if(!data || data.length === 0){
+      el.innerHTML = `<div class="admin-note">Les fichiers envoyés par vos clients lors d'une commande (logo, photo, design…) apparaîtront ici.</div><p class="card-sub">Aucun fichier pour le moment.</p>`;
+      return;
+    }
+    const cards = [];
+    for(const f of data){
+      let url = null;
+      try{
+        // Lien valable 10 ans — autant dire permanent, tout en gardant
+        // le fichier hors d'accès public direct (bucket privé).
+        const { data: signed, error: signErr } = await db.storage.from('order-uploads').createSignedUrl(f.storage_path, 60*60*24*365*10);
+        if(!signErr) url = signed.signedUrl;
+      }catch(e){ console.warn(e); }
+      const order = f.orders || {};
+      cards.push(`
+        <div class="admin-order-card" id="upload-${f.id}">
+          <div class="admin-order-head">
+            <strong>${escapeHtml(order.customer_name) || 'Client'}</strong>
+            <span class="mono">${new Date(f.created_at).toLocaleString('fr-FR')}</span>
+          </div>
+          ${order.code ? `<div class="item-code-tag" style="margin:4px 0;">${escapeHtml(order.code)}</div>` : ''}
+          <div class="card-sub">${escapeHtml(order.customer_phone)}</div>
+          <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            ${url ? `<a href="${url}" target="_blank" rel="noopener">📎 ${escapeHtml(f.original_filename) || 'Fichier'}</a>` : `<span class="card-sub">Lien indisponible</span>`}
+            <span class="card-sub">${Math.round((f.size_bytes||0)/1024)} Ko</span>
+            <button class="btn btn-ghost" style="margin-left:auto; padding:6px 12px; font-size:.8rem;" onclick="adminDeleteUpload(${f.id}, '${(f.storage_path||'').replace(/'/g,"\\'")}')">Supprimer</button>
+          </div>
+        </div>
+      `);
+    }
+    el.innerHTML = `
+      <div class="admin-note">Tous les fichiers envoyés par vos clients, du plus récent au plus ancien. Les liens n'expirent pas.</div>
+      ${cards.join('')}
+    `;
+  }catch(e){
+    el.innerHTML = `<div class="admin-note">Échec du chargement des fichiers.</div>`;
+    console.error(e);
+  }
+}
+async function adminDeleteUpload(id, storagePath){
+  showConfirmModal("Supprimer définitivement ce fichier ?", async () => {
+    try{
+      const { error: storageErr } = await db.storage.from('order-uploads').remove([storagePath]);
+      if(storageErr) console.warn('storage remove failed:', storageErr);
+      const { error } = await db.from('order_uploads').delete().eq('id', id);
+      if(error) throw error;
+      const card = document.getElementById('upload-'+id);
+      if(card) card.remove();
+      showToast("Fichier supprimé");
+    }catch(e){
+      showToast("Échec de la suppression");
+      console.error(e);
+    }
+  });
+}
+
+/* ---- Portfolio (réalisations) ---- */
+let ADMIN_PORTFOLIO = [];
+async function renderAdminPortfolio(){
+  const el = document.getElementById('adminTab-portfolio');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ Le portfolio nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('portfolio_items').select('*').order('display_order', { ascending:true });
+    if(error) throw error;
+    ADMIN_PORTFOLIO = data || [];
+  }catch(e){
+    el.innerHTML = `<div class="admin-note">Échec du chargement du portfolio.</div>`;
+    console.error(e);
+    return;
+  }
+  el.innerHTML = `
+    <div class="admin-note">Ces réalisations s'affichent sur la page publique "Portfolio", uniquement celles activées.</div>
+    <div id="adminPortfolioList"></div>
+    <button class="btn btn-ghost" onclick="adminAddPortfolioItem()">+ Ajouter une réalisation</button>
+  `;
+  renderAdminPortfolioList();
+}
+function renderAdminPortfolioList(){
+  const container = document.getElementById('adminPortfolioList');
+  if(!container) return;
+  container.innerHTML = ADMIN_PORTFOLIO.map((p, idx) => `
+    <div class="admin-item-row" id="adminportfolio-${p.id}">
+      <div class="admin-item-summary" onclick="toggleAdminPortfolioEdit(${p.id})">
+        <span>${p.title || '(sans titre)'} ${!p.is_active ? '<span class="stock-flag" style="position:static;">Désactivé</span>' : ''}</span>
+        <div style="display:flex; gap:4px; margin-left:auto;">
+          <button class="qty-btn" onclick="event.stopPropagation(); adminMovePortfolioItem(${idx}, -1)" ${idx===0?'disabled':''} aria-label="Monter">↑</button>
+          <button class="qty-btn" onclick="event.stopPropagation(); adminMovePortfolioItem(${idx}, 1)" ${idx===ADMIN_PORTFOLIO.length-1?'disabled':''} aria-label="Descendre">↓</button>
+        </div>
+      </div>
+      <div class="admin-item-edit" id="adminportfolioedit-${p.id}" style="display:none;">
+        <div class="form-field"><label>Titre</label><input type="text" id="pf-title-${p.id}" value="${(p.title||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Catégorie (ex : Branding, Web Design, Impression…)</label><input type="text" id="pf-category-${p.id}" value="${(p.category||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Client (optionnel)</label><input type="text" id="pf-client-${p.id}" value="${(p.client_name||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Description</label><input type="text" id="pf-desc-${p.id}" value="${(p.description||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-field"><label>Lien du projet (optionnel)</label><input type="text" id="pf-url-${p.id}" value="${(p.project_url||'').replace(/"/g,'&quot;')}" placeholder="https://…"></div>
+        <div class="form-field">
+          <label>Photos (jusqu'à 3)</label>
+          <div class="admin-image-row">
+            ${[0,1,2].map(slot => `
+              <div class="admin-image-slot">
+                <div class="admin-image-preview" id="pf-imgpreview-${p.id}-${slot}">${(p.image_urls && p.image_urls[slot]) ? `<img src="${p.image_urls[slot]}" alt="">` : '<span>Pas de photo</span>'}</div>
+                <input type="file" accept="image/*" id="pf-image-${p.id}-${slot}" onchange="previewAdminPortfolioImage(${p.id}, ${slot})">
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <label class="check-row"><input type="checkbox" id="pf-active-${p.id}" ${p.is_active?'checked':''}> Visible sur le site</label>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="pfsave-${p.id}" onclick="adminSavePortfolioItem(${p.id})">Enregistrer</button>
+          <button class="btn btn-ghost" onclick="adminDeletePortfolioItem(${p.id})">Supprimer</button>
+        </div>
+      </div>
+    </div>
+  `).join('') || '<p class="card-sub">Aucune réalisation pour le moment.</p>';
+}
+function toggleAdminPortfolioEdit(id){
+  const el = document.getElementById('adminportfolioedit-'+id);
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function previewAdminPortfolioImage(id, slot){
+  const input = document.getElementById(`pf-image-${id}-${slot}`);
+  const preview = document.getElementById(`pf-imgpreview-${id}-${slot}`);
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { preview.innerHTML = `<img src="${e.target.result}" alt="">`; };
+  reader.readAsDataURL(file);
+}
+async function adminMovePortfolioItem(idx, dir){
+  const otherIdx = idx + dir;
+  if(otherIdx < 0 || otherIdx >= ADMIN_PORTFOLIO.length) return;
+  const a = ADMIN_PORTFOLIO[idx], b = ADMIN_PORTFOLIO[otherIdx];
+  const aOrder = a.display_order, bOrder = b.display_order;
+  a.display_order = bOrder; b.display_order = aOrder;
+  [ADMIN_PORTFOLIO[idx], ADMIN_PORTFOLIO[otherIdx]] = [ADMIN_PORTFOLIO[otherIdx], ADMIN_PORTFOLIO[idx]];
+  renderAdminPortfolioList();
+  try{
+    await db.from('portfolio_items').update({ display_order: a.display_order }).eq('id', a.id);
+    await db.from('portfolio_items').update({ display_order: b.display_order }).eq('id', b.id);
+  }catch(e){ console.error(e); }
+}
+async function adminSavePortfolioItem(id){
+  const p = ADMIN_PORTFOLIO.find(x => x.id === id);
+  if(!p) return;
+  const btn = document.getElementById('pfsave-'+id);
+  if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+  try{
+    const imageUrls = p.image_urls ? [...p.image_urls] : [];
+    for(const slot of [0,1,2]){
+      const fileInput = document.getElementById(`pf-image-${id}-${slot}`);
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      if(file){
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${id}-${slot}-${Date.now()}.${ext}`;
+        const { error: upErr } = await db.storage.from('portfolio-images').upload(path, file, { upsert:true });
+        if(upErr) throw upErr;
+        imageUrls[slot] = db.storage.from('portfolio-images').getPublicUrl(path).data.publicUrl;
+      }
+    }
+    const payload = {
+      title: document.getElementById('pf-title-'+id).value.trim(),
+      category: document.getElementById('pf-category-'+id).value.trim() || null,
+      client_name: document.getElementById('pf-client-'+id).value.trim() || null,
+      description: document.getElementById('pf-desc-'+id).value.trim() || null,
+      project_url: document.getElementById('pf-url-'+id).value.trim() || null,
+      image_urls: imageUrls.filter(Boolean),
+      is_active: document.getElementById('pf-active-'+id).checked,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await db.from('portfolio_items').update(payload).eq('id', id);
+    if(error) throw error;
+    Object.assign(p, payload);
+    showToast("Réalisation enregistrée");
+  }catch(e){
+    showToast("Échec de l'enregistrement");
+    console.error(e);
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  renderAdminPortfolioList();
+}
+async function adminDeletePortfolioItem(id){
+  showConfirmModal("Supprimer définitivement cette réalisation ?", async () => {
+    try{
+      const { error } = await db.from('portfolio_items').delete().eq('id', id);
+      if(error) throw error;
+      ADMIN_PORTFOLIO = ADMIN_PORTFOLIO.filter(p => p.id !== id);
+      renderAdminPortfolioList();
+      showToast("Réalisation supprimée");
+    }catch(e){
+      showToast("Échec de la suppression");
+      console.error(e);
+    }
+  });
+}
+async function adminAddPortfolioItem(){
+  try{
+    const maxOrder = ADMIN_PORTFOLIO.reduce((m,p)=>Math.max(m,p.display_order||0), 0);
+    const { data, error } = await db.from('portfolio_items').insert({
+      title: 'Nouvelle réalisation', display_order: maxOrder + 1, is_active: false, image_urls: []
+    }).select().single();
+    if(error) throw error;
+    ADMIN_PORTFOLIO.push(data);
+    renderAdminPortfolioList();
+    setTimeout(()=> toggleAdminPortfolioEdit(data.id), 50);
+  }catch(e){
+    showToast("Échec de la création");
     console.error(e);
   }
 }
@@ -1356,10 +1857,10 @@ async function renderAdminCustomers(){
       ${data.map(c => `
         <div class="admin-order-card">
           <div class="admin-order-head">
-            <strong>${c.latest_name || 'Client'}</strong>
+            <strong>${escapeHtml(c.latest_name) || 'Client'}</strong>
             <span class="mono">${c.order_count} commande${c.order_count>1?'s':''}</span>
           </div>
-          <div class="card-sub">${c.phone || ''}${c.latest_address ? ' · ' + c.latest_address : ''}</div>
+          <div class="card-sub">${escapeHtml(c.phone)}${c.latest_address ? ' · ' + escapeHtml(c.latest_address) : ''}</div>
           <div class="cart-total-row"><span>Total dépensé</span><span class="amt">$${Number(c.total_spent||0).toFixed(2)}</span></div>
           <div class="card-sub">Première commande : ${new Date(c.first_order_at).toLocaleDateString('fr-FR')} · Dernière : ${new Date(c.last_order_at).toLocaleDateString('fr-FR')}</div>
         </div>
@@ -1372,36 +1873,109 @@ async function renderAdminCustomers(){
 }
 function renderAdminContent(){
   const c = SITE_CONTENT;
+  const p = PAGE_CONTENT;
   const note = SUPABASE_ENABLED
     ? "Ces textes sont enregistrés dans Supabase et visibles immédiatement par tous vos visiteurs."
     : "⚠️ Supabase n'est pas configuré : ces textes restent enregistrés uniquement sur cet appareil/navigateur.";
+  const esc = v => (v||'').replace(/"/g,'&quot;');
   document.getElementById('adminTab-content').innerHTML = `
     <div class="admin-note">${note}</div>
 
     <h3 style="margin-top:0;">Page d'accueil</h3>
-    <div class="form-field"><label>Titre principal</label><input type="text" id="c-hero-title" value="${(c.hero_title||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Sous-titre</label><input type="text" id="c-hero-subtitle" value="${(c.hero_subtitle||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Texte "À propos"</label><input type="text" id="c-about" value="${(c.about_text||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Titre principal</label><input type="text" id="c-hero-title" value="${esc(c.hero_title)}"></div>
+    <div class="form-field"><label>Sous-titre</label><input type="text" id="c-hero-subtitle" value="${esc(c.hero_subtitle)}"></div>
+    <div class="form-field"><label>Texte "À propos"</label><input type="text" id="c-about" value="${esc(c.about_text)}"></div>
 
     <h3>Coordonnées</h3>
-    <div class="form-field"><label>Adresse 1</label><input type="text" id="c-addr1" value="${(c.address_1||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Adresse 2</label><input type="text" id="c-addr2" value="${(c.address_2||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>NIF</label><input type="text" id="c-nif" value="${(c.nif||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Email de contact</label><input type="text" id="c-email" value="${(c.email||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Téléphone(s) affichés</label><input type="text" id="c-phone" value="${(c.phone_display||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Adresse 1</label><input type="text" id="c-addr1" value="${esc(c.address_1)}"></div>
+    <div class="form-field"><label>Adresse 2</label><input type="text" id="c-addr2" value="${esc(c.address_2)}"></div>
+    <div class="form-field"><label>NIF</label><input type="text" id="c-nif" value="${esc(c.nif)}"></div>
+    <div class="form-field"><label>Email de contact</label><input type="text" id="c-email" value="${esc(c.email)}"></div>
+    <div class="form-field"><label>Téléphone(s) affichés</label><input type="text" id="c-phone" value="${esc(c.phone_display)}"></div>
 
     <h3>Pied de page</h3>
-    <div class="form-field"><label>Slogan (sous le logo)</label><input type="text" id="c-tagline" value="${(c.footer_tagline||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Slogan (sous le logo)</label><input type="text" id="c-tagline" value="${esc(c.footer_tagline)}"></div>
 
     <h3>Réseaux sociaux</h3>
-    <div class="form-field"><label>Facebook (lien complet)</label><input type="text" id="c-facebook" value="${(c.social_facebook||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Instagram (lien complet)</label><input type="text" id="c-instagram" value="${(c.social_instagram||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>TikTok (lien complet)</label><input type="text" id="c-tiktok" value="${(c.social_tiktok||'').replace(/"/g,'&quot;')}"></div>
-    <div class="form-field"><label>Numéro WhatsApp (format international, sans le +)</label><input type="text" id="c-whatsapp" value="${(c.social_whatsapp_number||'').replace(/"/g,'&quot;')}"></div>
+    <div class="form-field"><label>Facebook (lien complet)</label><input type="text" id="c-facebook" value="${esc(c.social_facebook)}"></div>
+    <div class="form-field"><label>Instagram (lien complet)</label><input type="text" id="c-instagram" value="${esc(c.social_instagram)}"></div>
+    <div class="form-field"><label>TikTok (lien complet)</label><input type="text" id="c-tiktok" value="${esc(c.social_tiktok)}"></div>
+    <div class="form-field"><label>Numéro WhatsApp (format international, sans le +)</label><input type="text" id="c-whatsapp" value="${esc(c.social_whatsapp_number)}"></div>
 
-    <button class="btn btn-primary" id="save-content-btn" onclick="adminSaveContent()">Enregistrer</button>
+    <h3>Page Boutique</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-boutique-title" value="${esc(p.boutique_title)}"></div>
+    <div class="form-field"><label>Texte d'introduction (optionnel)</label><input type="text" id="p-boutique-intro" value="${esc(p.boutique_intro)}"></div>
+
+    <h3>Page Services</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-services-title" value="${esc(p.services_title)}"></div>
+    <div class="form-field"><label>Texte d'introduction (optionnel)</label><input type="text" id="p-services-intro" value="${esc(p.services_intro)}"></div>
+
+    <h3>Page Portfolio</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-portfolio-title" value="${esc(p.portfolio_title)}"></div>
+    <div class="form-field"><label>Texte d'introduction (optionnel)</label><input type="text" id="p-portfolio-intro" value="${esc(p.portfolio_intro)}"></div>
+
+    <h3>Page FAQ</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-faq-title" value="${esc(p.faq_title)}"></div>
+    <div class="form-field"><label>Texte d'introduction (optionnel)</label><input type="text" id="p-faq-intro" value="${esc(p.faq_intro)}"></div>
+    <div id="faqAdminList"></div>
+    <button class="btn btn-ghost" type="button" onclick="adminAddFaqItem()">+ Ajouter une question</button>
+
+    <h3>Politique de confidentialité</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-conf-title" value="${esc(p.confidentialite_title)}"></div>
+    <div class="form-field">
+      <label>Contenu — une ligne vide sépare les paragraphes ; faites précéder un titre de section par "## "</label>
+      <textarea id="p-conf-content" rows="8" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.9rem;">${(p.confidentialite_content||'')}</textarea>
+    </div>
+
+    <h3>Conditions générales</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-cond-title" value="${esc(p.conditions_title)}"></div>
+    <div class="form-field">
+      <label>Contenu</label>
+      <textarea id="p-cond-content" rows="8" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.9rem;">${(p.conditions_content||'')}</textarea>
+    </div>
+
+    <h3>Livraison &amp; retours</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-livr-title" value="${esc(p.livraison_title)}"></div>
+    <div class="form-field">
+      <label>Contenu</label>
+      <textarea id="p-livr-content" rows="8" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.9rem;">${(p.livraison_content||'')}</textarea>
+    </div>
+
+    <h3>Page Suivre ma commande</h3>
+    <div class="form-field"><label>Titre</label><input type="text" id="p-suivi-title" value="${esc(p.suivi_title)}"></div>
+    <div class="form-field"><label>Texte d'introduction</label><input type="text" id="p-suivi-intro" value="${esc(p.suivi_intro)}"></div>
+
+    <button class="btn btn-primary" id="save-content-btn" onclick="adminSaveContent()" style="margin-top:10px;">Enregistrer tout le contenu</button>
   `;
+  renderAdminFaqList();
 }
+
+/* ---- Éditeur de FAQ (liste dynamique) ---- */
+let ADMIN_FAQ_DRAFT = null;
+function renderAdminFaqList(){
+  if(!ADMIN_FAQ_DRAFT) ADMIN_FAQ_DRAFT = JSON.parse(JSON.stringify(PAGE_CONTENT.faq_items || []));
+  const container = document.getElementById('faqAdminList');
+  if(!container) return;
+  container.innerHTML = ADMIN_FAQ_DRAFT.map((item, i) => `
+    <div class="admin-item-row">
+      <div class="admin-item-edit" style="display:block;">
+        <div class="form-field"><label>Question ${i+1}</label><input type="text" value="${(item.question||'').replace(/"/g,'&quot;')}" oninput="ADMIN_FAQ_DRAFT[${i}].question = this.value"></div>
+        <div class="form-field"><label>Réponse</label><input type="text" value="${(item.answer||'').replace(/"/g,'&quot;')}" oninput="ADMIN_FAQ_DRAFT[${i}].answer = this.value"></div>
+        <button class="btn btn-ghost" type="button" onclick="adminRemoveFaqItem(${i})">Supprimer cette question</button>
+      </div>
+    </div>
+  `).join('') || '<p class="card-sub">Aucune question pour le moment.</p>';
+}
+function adminAddFaqItem(){
+  if(!ADMIN_FAQ_DRAFT) ADMIN_FAQ_DRAFT = JSON.parse(JSON.stringify(PAGE_CONTENT.faq_items || []));
+  ADMIN_FAQ_DRAFT.push({ question:"Nouvelle question", answer:"Réponse à compléter." });
+  renderAdminFaqList();
+}
+function adminRemoveFaqItem(i){
+  ADMIN_FAQ_DRAFT.splice(i, 1);
+  renderAdminFaqList();
+}
+
 async function adminSaveContent(){
   const val = id => document.getElementById(id).value.trim();
   SITE_CONTENT = {
@@ -1419,28 +1993,96 @@ async function adminSaveContent(){
     social_tiktok: val('c-tiktok'),
     social_whatsapp_number: val('c-whatsapp')
   };
+  PAGE_CONTENT = {
+    ...PAGE_CONTENT,
+    boutique_title: val('p-boutique-title'),
+    boutique_intro: val('p-boutique-intro'),
+    services_title: val('p-services-title'),
+    services_intro: val('p-services-intro'),
+    portfolio_title: val('p-portfolio-title'),
+    portfolio_intro: val('p-portfolio-intro'),
+    faq_title: val('p-faq-title'),
+    faq_intro: val('p-faq-intro'),
+    faq_items: ADMIN_FAQ_DRAFT || PAGE_CONTENT.faq_items,
+    confidentialite_title: val('p-conf-title'),
+    confidentialite_content: document.getElementById('p-conf-content').value.trim(),
+    conditions_title: val('p-cond-title'),
+    conditions_content: document.getElementById('p-cond-content').value.trim(),
+    livraison_title: val('p-livr-title'),
+    livraison_content: document.getElementById('p-livr-content').value.trim(),
+    suivi_title: val('p-suivi-title'),
+    suivi_intro: val('p-suivi-intro')
+  };
+
   if(SUPABASE_ENABLED){
     const btn = document.getElementById('save-content-btn');
     if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
     try{
       const { error } = await db.from('site_content').upsert({ id: 1, ...SITE_CONTENT });
       if(error) throw error;
+
+      const pageContentRows = Object.keys(PAGE_CONTENT).map(key => ({
+        key,
+        value: key === 'faq_items' ? JSON.stringify(PAGE_CONTENT.faq_items) : PAGE_CONTENT[key]
+      }));
+      const { error: pcError } = await db.from('page_content').upsert(pageContentRows);
+      if(pcError) throw pcError;
     }catch(e){
       showToast("Échec de l'enregistrement Supabase — vérifiez votre connexion.");
       console.error(e);
     }
-    if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+    if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer tout le contenu'; }
   }
   saveSiteContentLocal();
+  savePageContentLocal();
   applySiteContent();
+  applyPageContent();
   showToast("Contenu enregistré");
 }
 
 /* ---- Tableau de bord ---- */
+let ADMIN_DASHBOARD_PERIOD = '30j';
+let ADMIN_DASHBOARD_CUSTOM_FROM = '';
+let ADMIN_DASHBOARD_CUSTOM_TO = '';
+let ADMIN_DASHBOARD_ORDERS_CACHE = [];
+
 async function renderAdminDashboard(){
   const el = document.getElementById('adminTab-dashboard');
   el.innerHTML = `<p class="card-sub">Chargement…</p>`;
-  const orders = await getOrdersForAdmin();
+  ADMIN_DASHBOARD_ORDERS_CACHE = await getOrdersForAdmin();
+  renderDashboardContent();
+}
+function getFilteredDashboardOrders(){
+  const orders = ADMIN_DASHBOARD_ORDERS_CACHE || [];
+  const now = new Date();
+  let from = null, to = null;
+  if(ADMIN_DASHBOARD_PERIOD === 'today'){
+    from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  } else if(ADMIN_DASHBOARD_PERIOD === '7j'){
+    from = now.getTime() - 7*24*60*60*1000;
+  } else if(ADMIN_DASHBOARD_PERIOD === '30j'){
+    from = now.getTime() - 30*24*60*60*1000;
+  } else if(ADMIN_DASHBOARD_PERIOD === 'mois'){
+    from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  } else if(ADMIN_DASHBOARD_PERIOD === 'custom'){
+    from = ADMIN_DASHBOARD_CUSTOM_FROM ? new Date(ADMIN_DASHBOARD_CUSTOM_FROM).getTime() : null;
+    to = ADMIN_DASHBOARD_CUSTOM_TO ? new Date(ADMIN_DASHBOARD_CUSTOM_TO + 'T23:59:59').getTime() : null;
+  }
+  return orders.filter(o => (from == null || o.date >= from) && (to == null || o.date <= to));
+}
+function setDashboardPeriod(period){
+  ADMIN_DASHBOARD_PERIOD = period;
+  renderDashboardContent();
+}
+function setDashboardCustomRange(){
+  ADMIN_DASHBOARD_PERIOD = 'custom';
+  ADMIN_DASHBOARD_CUSTOM_FROM = document.getElementById('dashFrom').value;
+  ADMIN_DASHBOARD_CUSTOM_TO = document.getElementById('dashTo').value;
+  renderDashboardContent();
+}
+function renderDashboardContent(){
+  const el = document.getElementById('adminTab-dashboard');
+  const orders = getFilteredDashboardOrders();
   const totalOrders = orders.length;
   const totalRevenue = orders.reduce((s,o)=> s + (o.total||0), 0);
   const itemCounts = {};
@@ -1449,16 +2091,37 @@ async function renderAdminDashboard(){
   const noteText = SUPABASE_ENABLED
     ? "Ces statistiques comptent toutes les commandes reçues via Supabase, quel que soit l'appareil utilisé par vos clients."
     : "Ces statistiques ne comptent que les commandes envoyées depuis <strong>cet appareil</strong> — Supabase n'est pas encore configuré. Voir le fichier schema-supabase.sql pour centraliser les commandes de tous vos clients.";
+
+  const periods = [
+    {key:'today', label:"Aujourd'hui"},
+    {key:'7j', label:'7 jours'},
+    {key:'30j', label:'30 jours'},
+    {key:'mois', label:'Ce mois-ci'},
+    {key:'all', label:'Tout'}
+  ];
+
   el.innerHTML = `
     <div class="admin-note">${noteText}</div>
+    <div class="admin-tabs" style="margin-bottom:14px;">
+      ${periods.map(p => `<button class="admin-tab ${ADMIN_DASHBOARD_PERIOD===p.key?'active':''}" onclick="setDashboardPeriod('${p.key}')">${p.label}</button>`).join('')}
+      <button class="admin-tab ${ADMIN_DASHBOARD_PERIOD==='custom'?'active':''}" onclick="toggleDashboardCustomRange()">Personnalisé</button>
+    </div>
+    <div id="dashboardCustomRange" style="display:${ADMIN_DASHBOARD_PERIOD==='custom'?'flex':'none'}; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+      <div class="form-field" style="flex:1; min-width:140px;"><label>Du</label><input type="date" id="dashFrom" value="${ADMIN_DASHBOARD_CUSTOM_FROM}" onchange="setDashboardCustomRange()"></div>
+      <div class="form-field" style="flex:1; min-width:140px;"><label>Au</label><input type="date" id="dashTo" value="${ADMIN_DASHBOARD_CUSTOM_TO}" onchange="setDashboardCustomRange()"></div>
+    </div>
     <div class="admin-stat-grid">
-      <div class="admin-stat-card"><div class="stat-num">${totalOrders}</div><div class="stat-label">Commandes ${SUPABASE_ENABLED ? '(toutes)' : '(cet appareil)'}</div></div>
+      <div class="admin-stat-card"><div class="stat-num">${totalOrders}</div><div class="stat-label">Commandes</div></div>
       <div class="admin-stat-card"><div class="stat-num">$${totalRevenue.toFixed(2)}</div><div class="stat-label">Total estimé</div></div>
       <div class="admin-stat-card"><div class="stat-num">${CATALOG.products.length + CATALOG.services.length}</div><div class="stat-label">Articles au catalogue</div></div>
     </div>
     <h3>Articles les plus commandés</h3>
-    ${topItems.length ? '<ul class="admin-list">' + topItems.map(([n,q])=>`<li>${n} — ${q}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune commande enregistrée pour le moment.</p>'}
+    ${topItems.length ? '<ul class="admin-list">' + topItems.map(([n,q])=>`<li>${escapeHtml(n)} — ${q}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune commande sur cette période.</p>'}
   `;
+}
+function toggleDashboardCustomRange(){
+  ADMIN_DASHBOARD_PERIOD = 'custom';
+  renderDashboardContent();
 }
 
 /* ---- Catalogue ---- */
@@ -1515,6 +2178,10 @@ function adminItemRowHTML(kind, item){
         <label class="check-row"><input type="checkbox" id="f-instock-${item.id}" ${item.inStock!==false?'checked':''}> En stock</label>
         <label class="check-row"><input type="checkbox" id="f-custom-${item.id}" ${item.customizable?'checked':''}> Personnalisable</label>
       `}
+      <h3 style="margin:18px 0 4px; font-size:.95rem;">SEO de cette fiche (optionnel)</h3>
+      <div class="admin-note" style="margin-bottom:10px;">Si laissé vide, un titre/description sont générés automatiquement à partir du nom et de la description ci-dessus.</div>
+      <div class="form-field"><label>Titre pour Google (optionnel)</label><input type="text" id="f-seotitle-${item.id}" value="${(item.seoTitle||'').replace(/"/g,'&quot;')}" placeholder="${item.name} — JC Multimedia"></div>
+      <div class="form-field"><label>Description pour Google (optionnel)</label><input type="text" id="f-seodesc-${item.id}" value="${(item.seoDescription||'').replace(/"/g,'&quot;')}" placeholder="${((item.utility||item.description)||'').slice(0,80)}"></div>
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="adminSaveItem('${kind}','${item.id}')" id="save-${item.id}">Enregistrer</button>
         <button class="btn btn-ghost" onclick="adminDeleteItem('${kind}','${item.id}')">Supprimer</button>
@@ -1561,6 +2228,8 @@ async function adminSaveItem(kind, id){
     item.inStock = document.getElementById('f-instock-'+id).checked;
     item.customizable = document.getElementById('f-custom-'+id).checked;
   }
+  item.seoTitle = document.getElementById('f-seotitle-'+id).value.trim();
+  item.seoDescription = document.getElementById('f-seodesc-'+id).value.trim();
 
   const imageUrls = item.imageUrls ? [...item.imageUrls] : [];
   const filesToUpload = [];
@@ -1594,22 +2263,23 @@ async function adminSaveItem(kind, id){
   showToast("Article enregistré");
 }
 async function adminDeleteItem(kind, id){
-  if(!window.confirm("Supprimer définitivement cet article du catalogue ?")) return;
-  CATALOG[kind] = CATALOG[kind].filter(i => i.id !== id);
-  if(SUPABASE_ENABLED){
-    try{
-      const { error } = await db.from('catalog_items').delete().eq('id', id);
-      if(error) throw error;
-    }catch(e){
-      showToast("Échec de la suppression Supabase — vérifiez votre connexion.");
-      console.error(e);
+  showConfirmModal("Supprimer définitivement cet article du catalogue ?", async () => {
+    CATALOG[kind] = CATALOG[kind].filter(i => i.id !== id);
+    if(SUPABASE_ENABLED){
+      try{
+        const { error } = await db.from('catalog_items').delete().eq('id', id);
+        if(error) throw error;
+      }catch(e){
+        showToast("Échec de la suppression Supabase — vérifiez votre connexion.");
+        console.error(e);
+      }
     }
-  }
-  saveCatalogLocal();
-  rebuildIndex();
-  renderGrid();
-  renderAdminCatalog();
-  showToast("Article supprimé");
+    saveCatalogLocal();
+    rebuildIndex();
+    renderGrid();
+    renderAdminCatalog();
+    showToast("Article supprimé");
+  });
 }
 async function adminAddItem(kind){
   const id = 'item_' + Date.now();
@@ -1666,6 +2336,7 @@ async function getOrdersForAdmin(){
         exchangeRate: Number(row.exchange_rate || SETTINGS.exchangeRate),
         payment: row.payment,
         delivery: row.delivery,
+        details: row.details,
         paymentRecord: paymentsByOrder[row.id] || null,
         uploadCount: uploadCountByOrder[row.id] || 0
       }));
@@ -1713,20 +2384,21 @@ function orderRowHTML(o){
     : '';
   return `<div class="admin-order-card">
     <div class="admin-order-head">
-      <strong>${o.customerName || 'Client'}</strong>
+      <strong>${escapeHtml(o.customerName) || 'Client'}</strong>
       <span class="mono">${new Date(o.date).toLocaleString('fr-FR')}</span>
     </div>
-    ${o.code ? `<div class="item-code-tag" style="margin:4px 0;">${o.code}</div>` : ''}
-    <div class="card-sub">${o.customerPhone || ''}${o.customerAddress ? ' · ' + o.customerAddress : ''}</div>
-    <ul class="admin-list">${(o.items||[]).map(i => `<li>${i.name} × ${i.qty}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('')}</ul>
+    ${o.code ? `<div class="item-code-tag" style="margin:4px 0;">${escapeHtml(o.code)}</div>` : ''}
+    <div class="card-sub">${escapeHtml(o.customerPhone)}${o.customerAddress ? ' · ' + escapeHtml(o.customerAddress) : ''}</div>
+    <ul class="admin-list">${(o.items||[]).map(i => `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('')}</ul>
     <div class="cart-total-row"><span>Total</span><span class="amt">$${(o.total||0).toFixed(2)}<span class="price-htg">≈ ${htg} HTG</span></span></div>
-    <div class="card-sub">Livraison : ${o.delivery || '—'}</div>
+    <div class="card-sub">Livraison : ${escapeHtml(o.delivery) || '—'}</div>
+    ${o.details ? `<div class="admin-note" style="margin-top:8px;"><strong>Détails demandés par le client :</strong><br>${escapeHtml(o.details).replace(/\n/g,'<br>')}</div>` : ''}
     ${o.uploadCount > 0 ? `
       <button class="btn btn-ghost" style="margin-top:10px;" onclick="adminViewOrderFiles(${o.id}, this)">📎 Voir les ${o.uploadCount} fichier${o.uploadCount>1?'s':''} joint${o.uploadCount>1?'s':''}</button>
       <div id="orderfiles-${o.id}" style="margin-top:10px;"></div>
     ` : ''}
     <div class="form-field" style="margin-top:10px;"><label>Statut de la commande</label>${statusSelect}</div>
-    ${paymentSelect ? `<div class="form-field"><label>Statut du paiement (${o.payment || '—'})</label>${paymentSelect}</div>` : `<div class="card-sub">Paiement : ${o.payment || '—'}</div>`}
+    ${paymentSelect ? `<div class="form-field"><label>Statut du paiement (${escapeHtml(o.payment) || '—'})</label>${paymentSelect}</div>` : `<div class="card-sub">Paiement : ${escapeHtml(o.payment) || '—'}</div>`}
   </div>`;
 }
 async function adminViewOrderFiles(orderId, btnEl){
@@ -1776,29 +2448,37 @@ async function adminClearOrders(){
   const msg = SUPABASE_ENABLED
     ? "Effacer DÉFINITIVEMENT tout l'historique des commandes dans Supabase (pour tous les appareils) ?"
     : "Effacer tout l'historique des commandes enregistrées sur cet appareil ?";
-  if(!window.confirm(msg)) return;
-  if(SUPABASE_ENABLED){
-    try{
-      const { error } = await db.from('orders').delete().neq('id', 0);
-      if(error) throw error;
-    }catch(e){
-      showToast("Échec de la suppression Supabase — vérifiez votre connexion.");
-      console.error(e);
+  showConfirmModal(msg, async () => {
+    if(SUPABASE_ENABLED){
+      try{
+        const { error } = await db.from('orders').delete().neq('id', 0);
+        if(error) throw error;
+      }catch(e){
+        showToast("Échec de la suppression Supabase — vérifiez votre connexion.");
+        console.error(e);
+      }
     }
-  }
-  saveOrdersLocal([]);
-  renderAdminOrders();
-  showToast("Historique vidé");
+    saveOrdersLocal([]);
+    renderAdminOrders();
+    showToast("Historique vidé");
+  });
 }
 async function exportOrdersCSV(){
   const orders = await getOrdersForAdmin();
   if(orders.length === 0){ showToast("Aucune commande à exporter"); return; }
+  // Neutralise l'injection de formule CSV (Excel/Sheets) : si une valeur
+  // commence par = + - @, un tableur peut l'interpréter comme une formule.
+  const csvSafe = v => {
+    let s = (v == null ? '' : String(v)).replace(/"/g,'""');
+    if(/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return s;
+  };
   let csv = "Date,Nom,Telephone,Adresse,Articles,Total USD,Total HTG,Taux utilise,Paiement,Livraison\n";
   orders.forEach(o => {
-    const items = (o.items||[]).map(i => `${i.name} x${i.qty}`).join(' | ').replace(/"/g,'""');
+    const items = (o.items||[]).map(i => `${csvSafe(i.name)} x${Number(i.qty)||0}`).join(' | ');
     const rate = o.exchangeRate || SETTINGS.exchangeRate;
     const htgTotal = Math.round((o.total||0) * rate);
-    csv += `"${new Date(o.date).toLocaleString('fr-FR')}","${(o.customerName||'').replace(/"/g,'""')}","${(o.customerPhone||'').replace(/"/g,'""')}","${(o.customerAddress||'').replace(/"/g,'""')}","${items}",${(o.total||0).toFixed(2)},${htgTotal},${rate},"${o.payment||''}","${o.delivery||''}"\n`;
+    csv += `"${new Date(o.date).toLocaleString('fr-FR')}","${csvSafe(o.customerName)}","${csvSafe(o.customerPhone)}","${csvSafe(o.customerAddress)}","${items}",${(o.total||0).toFixed(2)},${htgTotal},${rate},"${csvSafe(o.payment)}","${csvSafe(o.delivery)}"\n`;
   });
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -1901,6 +2581,7 @@ function adminChangePassword(){
 renderGrid();
 updateBadge();
 applySiteContent();
+applyPageContent();
 if(document.body.dataset.page === 'article') initArticlePage();
 if(document.body.dataset.page === 'admin') checkAdminSession();
 
@@ -1911,6 +2592,8 @@ if(SUPABASE_ENABLED){
   refreshCatalog();
   refreshSettings().then(initHeroSlideshow);
   refreshSiteContent();
+  refreshPageContent();
+  initPortfolio();
 } else {
   console.info("Supabase non configuré — le site fonctionne en mode local uniquement. Voir schema-supabase.sql pour activer la synchronisation centralisée.");
 }

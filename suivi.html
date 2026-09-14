@@ -83,9 +83,10 @@
   <button class="drawer-close" onclick="closeDrawer()">✕</button>
   <nav>
     <a href="/boutique">Boutique</a>
-    <a href="/#services">Services</a>
+    <a href="/services">Services</a>
     <a href="/#apropos">À propos</a>
     <a href="/faq">FAQ</a>
+    <a href="/portfolio">Portfolio</a>
     <a href="/suivi">Suivre ma commande</a>
     <a href="/#contact">Contact</a>
   </nav>
@@ -106,8 +107,8 @@
 </script>
 <section class="section page-section">
   <a href="/" class="page-back">← Retour à l'accueil</a>
-  <h1>Suivre ma commande</h1>
-  <p class="card-sub">Entrez le code de votre commande (ex : JC-PRC1001) et le numéro de téléphone utilisé lors de la commande.</p>
+  <h1 id="suiviTitleText">Suivre ma commande</h1>
+  <p id="suiviIntroText" class="card-sub">Entrez le code de votre commande (ex : JC-PRC1001) et le numéro de téléphone utilisé lors de la commande.</p>
   <div class="form-field"><label for="trackCode">Code de commande</label><input type="text" id="trackCode" placeholder="Ex : JC-PRC1001"></div>
   <div class="form-field"><label for="trackPhone">Téléphone</label><input type="tel" id="trackPhone" placeholder="Le numéro utilisé pour la commande"></div>
   <button class="btn btn-primary" onclick="submitTrackOrder()">Rechercher</button>
@@ -141,9 +142,10 @@
       <h4>Navigation</h4>
       <nav>
         <a href="/boutique">Boutique</a>
-        <a href="/#services">Services</a>
+        <a href="/services">Services</a>
         <a href="/#apropos">À propos</a>
         <a href="/faq">FAQ</a>
+        <a href="/portfolio">Portfolio</a>
         <a href="/suivi">Suivre ma commande</a>
         <a href="/#contact">Contact</a>
       </nav>
