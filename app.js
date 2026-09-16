@@ -476,7 +476,7 @@ let CATALOG = loadCatalogLocal();
 /* ---- Mapping Supabase (table catalog_items) <-> objets JS ---- */
 function rowToItem(row){
   const item = {
-    id: row.id, name: row.name, code: row.code || null,
+    id: row.id, name: row.name, code: row.code || null, slug: row.slug || row.id,
     imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(Boolean) : (row.image_url ? [row.image_url] : []),
     inStock: row.in_stock, customizable: row.customizable, promo: row.promo,
     seoTitle: row.seo_title || "", seoDescription: row.seo_description || ""
@@ -541,6 +541,10 @@ function ensureUiQtyDefaults(){
 }
 function unitPrice(item){ return item.startingPrice != null ? item.startingPrice : item.price; }
 function isEstimate(item){ return item.startingPrice != null; }
+function itemUrlPath(item){
+  const section = isEstimate(item) ? 'services' : 'boutique';
+  return `/${section}/${item.slug || item.id}`;
+}
 
 /* =========================================================
    STATE
@@ -572,13 +576,13 @@ function cardHTML(item){
        </div>`;
   return `
     <div class="card">
-      <a class="thumb" href="/article/${item.id}" aria-label="Voir la page de ${name}">
+      <a class="thumb" href="${itemUrlPath(item)}" aria-label="Voir la page de ${name}">
         ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
         ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
         ${(item.imageUrls && item.imageUrls[0]) ? `<img src="${item.imageUrls[0]}" alt="${name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
       </a>
       <div class="body">
-        <h3><a href="/article/${item.id}" class="card-title-link">${name}</a></h3>
+        <h3><a href="${itemUrlPath(item)}" class="card-title-link">${name}</a></h3>
         ${subText ? `<p class="card-sub">${subText}</p>` : ''}
         ${priceBlock}
         <div class="qty-row">
@@ -715,7 +719,7 @@ function renderItemDetail(id){
   setMeta('twitterTitleMeta', seoTitle);
   setMeta('twitterDescriptionMeta', seoDesc);
   const canonicalEl = document.getElementById('canonicalLink');
-  if(canonicalEl) canonicalEl.href = window.location.origin + '/article/' + id;
+  if(canonicalEl) canonicalEl.href = window.location.origin + itemUrlPath(item);
 
   const sectionLabel = isEstimate(item) ? 'Nos services' : 'Boutique';
   const sectionPath = isEstimate(item) ? '/services' : '/boutique';
@@ -846,11 +850,16 @@ function setGalleryImage(images, idx, btnEl){
 /* Sur la page article.html : lit l'identifiant dans l'URL (/article/ID) et
    affiche la bonne fiche dès que le catalogue est disponible. */
 function initArticlePage(){
-  const match = window.location.pathname.match(/^\/article\/(.+)$/);
-  const id = match ? decodeURIComponent(match[1]) : null;
+  const match = window.location.pathname.match(/^\/(boutique|services)\/([^\/]+)$/);
+  const slug = match ? decodeURIComponent(match[2]) : null;
   const content = document.getElementById('itemDetailContent');
-  if(!id){ content.innerHTML = '<p class="card-sub">Article introuvable.</p>'; return; }
-  if(ALL_ITEMS[id]){ renderItemDetail(id); return; }
+  if(!slug){ content.innerHTML = '<p class="card-sub">Article introuvable.</p>'; return; }
+  const found = Object.values(ALL_ITEMS).find(i => i.slug === slug);
+  if(found){ renderItemDetail(found.id); return; }
+  if(Object.keys(ALL_ITEMS).length > 0){
+    content.innerHTML = '<p class="card-sub">Article introuvable.</p>';
+    return;
+  }
   content.innerHTML = '<p class="card-sub">Chargement…</p>';
 }
 
@@ -2178,6 +2187,7 @@ function adminItemRowHTML(kind, item){
         <label class="check-row"><input type="checkbox" id="f-instock-${item.id}" ${item.inStock!==false?'checked':''}> En stock</label>
         <label class="check-row"><input type="checkbox" id="f-custom-${item.id}" ${item.customizable?'checked':''}> Personnalisable</label>
       `}
+      <div class="form-field"><label>Adresse de cette page</label><input type="text" readonly value="https://jc-multimedia.vercel.app${itemUrlPath(item)}" onclick="this.select()"></div>
       <h3 style="margin:18px 0 4px; font-size:.95rem;">SEO de cette fiche (optionnel)</h3>
       <div class="admin-note" style="margin-bottom:10px;">Si laissé vide, un titre/description sont générés automatiquement à partir du nom et de la description ci-dessus.</div>
       <div class="form-field"><label>Titre pour Google (optionnel)</label><input type="text" id="f-seotitle-${item.id}" value="${(item.seoTitle||'').replace(/"/g,'&quot;')}" placeholder="${item.name} — JC Multimedia"></div>

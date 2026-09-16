@@ -2,6 +2,8 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/article/:id", "destination": "/article.html" }
+    { "source": "/article/:id", "destination": "/article.html" },
+    { "source": "/boutique/:slug", "destination": "/article.html" },
+    { "source": "/services/:slug", "destination": "/article.html" }
   ]
 }
