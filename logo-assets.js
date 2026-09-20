@@ -22,11 +22,6 @@
   var LOGO_URI  = "data:image/png;base64," + LOGO_B64;
 
   function applyLogos(){
-    var ids = ["ogImageMeta","twitterImageMeta"];
-    ids.forEach(function(id){
-      var el = document.getElementById(id);
-      if(el) el.setAttribute("content", BADGE_URI);
-    });
     ["faviconLink","appleTouchIconLink"].forEach(function(id){
       var el = document.getElementById(id);
       if(el) el.setAttribute("href", BADGE_URI);

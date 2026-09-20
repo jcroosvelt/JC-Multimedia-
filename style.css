@@ -3,7 +3,7 @@
    JC MULTIMEDIA — design tokens (identité alignée sur le logo)
    Palette:  bg #FFFFFF / surface #F7F8FC / surface2 #EEF1F7
              navy  #0B2158 (texte, structure, footer)
-             amber #F9B214 (accent, actions principales)
+             bordeaux #7A1F35 (accent, actions principales)
              coral #E2483D (alerte / promo / envoi WhatsApp)
    Display: Space Grotesk  |  Body: Inter  |  Utilitaire/chiffres: IBM Plex Mono
    Signature: barres d'égaliseur navy/amber (identité "signal audio/vidéo")
@@ -15,8 +15,8 @@
   --line:#E3E7F0;
   --navy:#0B2158;
   --navy-deep:#071640;
-  --amber:#F9B214;
-  --amber-deep:#E2A100;
+  --amber:#7A1F35;
+  --amber-deep:#5C1627;
   --coral:#E2483D;
   --coral-deep:#C9362C;
   --text:#12234F;
@@ -173,7 +173,7 @@ header.site{
   border:none; border-radius:11px; padding:14px 22px; font-weight:600;
   cursor:pointer; font-size:.95rem; transition:.2s; display:inline-flex; align-items:center; gap:8px;
 }
-.btn-primary{background:var(--amber); color:var(--navy-deep);}
+.btn-primary{background:var(--amber); color:#fff;}
 .btn-primary:hover{background:var(--amber-deep); transform:translateY(-1px);}
 .btn-ghost{background:transparent; border:1px solid var(--line); color:var(--navy);}
 .btn-ghost:hover{border-color:var(--navy); background:var(--surface2);}
@@ -211,6 +211,13 @@ header.site{
 .section-head .tag{color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:.75rem; letter-spacing:.1em; text-transform:uppercase;}
 
 .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px;}
+
+/* Grille des aperçus Boutique/Services sur l'accueil : 2 colonnes sur
+   mobile, 3 sur tablette, 5 sur ordinateur — indépendant de .grid pour
+   ne pas affecter les pages Boutique/Services elles-mêmes. */
+.grid-home{display:grid; grid-template-columns:repeat(2, 1fr); gap:14px;}
+@media(min-width:640px){ .grid-home{grid-template-columns:repeat(3, 1fr); gap:16px;} }
+@media(min-width:1100px){ .grid-home{grid-template-columns:repeat(5, 1fr); gap:18px;} }
 .section-link{text-align:center; margin-top:24px;}
 .section-link a{color:var(--navy); font-weight:600; text-decoration:none; font-size:.92rem;}
 .section-link a:hover{color:var(--amber-deep); text-decoration:underline;}
@@ -290,7 +297,7 @@ header.site{
 .qty-btn:hover{border-color:var(--amber);}
 .qty-val{width:36px; text-align:center; font-family:'IBM Plex Mono',monospace;}
 .add-btn{
-  margin-top:8px; background:var(--amber); color:var(--navy-deep); border:none; border-radius:9px;
+  margin-top:8px; background:var(--amber); color:#fff; border:none; border-radius:9px;
   padding:10px; font-weight:700; cursor:pointer; transition:.2s; font-size:.88rem;
 }
 .add-btn:hover{background:var(--amber-deep);}
@@ -372,7 +379,7 @@ footer nav a:hover{color:var(--amber);}
   transition:.15s;
 }
 .opt-btn:hover{border-color:var(--amber);}
-.opt-btn.selected{background:var(--amber); color:var(--navy-deep); border-color:var(--amber); font-weight:700;}
+.opt-btn.selected{background:var(--amber); color:#fff; border-color:var(--amber); font-weight:700;}
 .check-row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:.92rem; color:var(--text);}
 .check-row input{width:18px;height:18px; accent-color:var(--amber);}
 .modal-actions{display:flex; gap:10px; margin-top:20px;}
@@ -380,7 +387,7 @@ footer nav a:hover{color:var(--amber);}
 .modal-cancel{display:block; margin:12px auto 0; background:none; border:none; color:var(--muted); font-size:.85rem; cursor:pointer;}
 .modal-confirm{text-align:center; padding-top:6px;}
 .confirm-icon{
-  width:52px; height:52px; border-radius:50%; background:var(--amber); color:var(--navy-deep);
+  width:52px; height:52px; border-radius:50%; background:var(--amber); color:#fff;
   display:flex; align-items:center; justify-content:center; font-size:1.5rem; font-weight:700;
   margin:0 auto 16px;
 }
@@ -409,6 +416,44 @@ footer nav a:hover{color:var(--amber);}
   color:var(--muted); font-size:.82rem; font-weight:600; cursor:pointer;
 }
 .filter-chip.active{background:var(--navy); border-color:var(--navy); color:#fff;}
+
+/* ---------- avis clients ---------- */
+.review-form-card{
+  background:var(--surface2); border-radius:14px; padding:20px; max-width:520px;
+}
+.review-card{
+  background:#fff; border:1px solid var(--line); border-radius:12px;
+  padding:16px; margin-bottom:12px;
+}
+.star-row{display:flex; gap:4px; margin-bottom:4px;}
+.star-btn{
+  background:none; border:none; font-size:1.6rem; line-height:1; cursor:pointer;
+  color:var(--line); padding:0;
+}
+.star-btn.filled{color:var(--amber);}
+.rating-summary{font-size:1.2rem; color:var(--amber-deep); margin-bottom:16px;}
+
+/* ---------- calcul au pied carré ---------- */
+.dim-format-badge{
+  display:inline-block; padding:9px 14px; border-radius:10px;
+  background:var(--surface2); border:1px solid var(--line);
+  font-weight:600; font-size:.9rem; color:var(--navy);
+}
+.dim-inputs{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.dim-inputs input{
+  width:110px; padding:11px 12px; border-radius:10px; border:1px solid var(--line);
+  background:var(--surface2); color:var(--text); font-family:inherit; font-size:.95rem;
+}
+.dim-inputs span{color:var(--muted); font-size:.9rem;}
+.dim-computed-price{
+  font-size:1.15rem; margin:12px 0; padding:12px 14px; border-radius:10px;
+  background:var(--surface2); color:var(--navy);
+}
+.rating-summary strong{color:var(--navy); font-size:1rem; margin-left:4px;}
+.item-reviews-section{
+  margin-top:32px; padding-top:24px; border-top:1px solid var(--line);
+  max-width:520px;
+}
 .search-bar input{
   width:100%; max-width:360px; padding:11px 14px; border-radius:10px;
   border:1px solid var(--line); background:var(--surface2); color:var(--text); font-size:.92rem;

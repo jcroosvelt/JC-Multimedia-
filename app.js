@@ -227,6 +227,156 @@ function showPortfolioDetail(id){
   `, title);
 }
 
+/* =========================================================
+   AVIS CLIENTS — commentaires généraux sur l'accueil (sans note),
+   et notes par étoiles sur chaque fiche produit/service.
+   Tout avis est mis "en attente" et n'apparaît qu'une fois
+   approuvé par l'admin (protection anti-spam / anti-abus).
+   ========================================================= */
+async function initHomeReviews(){
+  const list = document.getElementById('homeReviewsList');
+  if(!list || !SUPABASE_ENABLED) return;
+  try{
+    const { data, error } = await db.from('reviews')
+      .select('*')
+      .is('catalog_item_id', null)
+      .eq('is_approved', true)
+      .order('created_at', { ascending:false })
+      .limit(3);
+    if(error) throw error;
+    renderHomeReviews(data || []);
+  }catch(e){ console.warn('reviews fetch failed:', e); }
+}
+function renderHomeReviews(reviews){
+  const list = document.getElementById('homeReviewsList');
+  if(!list) return;
+  if(!reviews.length){
+    list.innerHTML = `<p class="card-sub">Aucun commentaire pour le moment — soyez le premier à partager votre expérience !</p>`;
+    return;
+  }
+  list.innerHTML = reviews.map(r => `
+    <div class="review-card">
+      <strong>${escapeHtml(r.customer_name)}</strong>
+      <span class="card-sub" style="display:block; margin:4px 0 8px;">${new Date(r.created_at).toLocaleDateString('fr-FR')}</span>
+      <p style="margin:0;">${escapeHtml(r.comment).replace(/\n/g,'<br>')}</p>
+    </div>
+  `).join('');
+}
+async function submitHomeReview(){
+  const nameEl = document.getElementById('reviewName');
+  const commentEl = document.getElementById('reviewComment');
+  const msgEl = document.getElementById('reviewFormMsg');
+  const name = nameEl.value.trim();
+  const comment = commentEl.value.trim();
+  msgEl.style.display = 'block';
+  if(!name || !comment){
+    msgEl.textContent = "Merci de remplir votre nom et votre commentaire.";
+    msgEl.className = 'form-error';
+    return;
+  }
+  if(!SUPABASE_ENABLED){
+    msgEl.textContent = "L'envoi de commentaire nécessite une connexion. Réessayez plus tard.";
+    msgEl.className = 'form-error';
+    return;
+  }
+  try{
+    const { error } = await db.from('reviews').insert({
+      catalog_item_id: null, customer_name: name, comment, rating: null, is_approved: false
+    });
+    if(error) throw error;
+    nameEl.value = ''; commentEl.value = '';
+    msgEl.textContent = "Merci ! Votre commentaire sera visible après validation.";
+    msgEl.className = 'card-sub';
+  }catch(e){
+    msgEl.textContent = "Échec de l'envoi. Réessayez.";
+    msgEl.className = 'form-error';
+    console.error(e);
+  }
+}
+
+/* ---- Notation par étoiles sur une fiche produit/service ---- */
+function starRowHTML(current, itemId){
+  let html = `<div class="star-row" id="starRow-${itemId}" data-selected="${current||0}">`;
+  for(let i=1;i<=5;i++){
+    html += `<button type="button" class="star-btn ${i<=current?'filled':''}" onclick="selectStarRating('${itemId}',${i})" aria-label="${i} étoile${i>1?'s':''}">★</button>`;
+  }
+  html += `</div>`;
+  return html;
+}
+let selectedRatings = {};
+function selectStarRating(itemId, value){
+  selectedRatings[itemId] = value;
+  const row = document.getElementById('starRow-'+itemId);
+  if(row){
+    row.dataset.selected = value;
+    Array.from(row.children).forEach((btn,i) => btn.classList.toggle('filled', i < value));
+  }
+}
+async function initItemReviews(itemId, description){
+  const summaryEl = document.getElementById('itemRatingSummary');
+  const listEl = document.getElementById('itemReviewsList');
+  if(!SUPABASE_ENABLED || !summaryEl) return;
+  try{
+    const { data: summary } = await db.from('item_rating_summary').select('*').eq('catalog_item_id', itemId).single();
+    if(summary && summary.rating_count > 0){
+      summaryEl.innerHTML = `${'★'.repeat(Math.round(summary.avg_rating))}${'☆'.repeat(5-Math.round(summary.avg_rating))} <strong>${summary.avg_rating}</strong> <span class="card-sub">(${summary.rating_count} avis)</span>`;
+      const item = ALL_ITEMS[itemId];
+      if(item) injectItemStructuredData(item, description, summary);
+    } else {
+      summaryEl.innerHTML = `<span class="card-sub">Aucun avis pour le moment — soyez le premier à noter cet article !</span>`;
+    }
+  }catch(e){ console.warn('rating summary fetch failed:', e); }
+  try{
+    const { data: reviews } = await db.from('reviews').select('*').eq('catalog_item_id', itemId).eq('is_approved', true).not('rating', 'is', null).order('created_at', { ascending:false }).limit(10);
+    if(listEl){
+      listEl.innerHTML = (reviews||[]).map(r => `
+        <div class="review-card">
+          <div>${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</div>
+          <strong>${escapeHtml(r.customer_name)}</strong>
+          ${r.comment ? `<p style="margin:6px 0 0;">${escapeHtml(r.comment).replace(/\n/g,'<br>')}</p>` : ''}
+        </div>
+      `).join('') || `<p class="card-sub">Aucun commentaire pour le moment.</p>`;
+    }
+  }catch(e){ console.warn('item reviews fetch failed:', e); }
+}
+async function submitItemReview(itemId){
+  const nameEl = document.getElementById('reviewerName-'+itemId);
+  const commentEl = document.getElementById('reviewerComment-'+itemId);
+  const msgEl = document.getElementById('itemReviewMsg-'+itemId);
+  const rating = selectedRatings[itemId];
+  const name = nameEl.value.trim();
+  msgEl.style.display = 'block';
+  if(!rating){
+    msgEl.textContent = "Merci de choisir une note (1 à 5 étoiles).";
+    msgEl.className = 'form-error';
+    return;
+  }
+  if(!name){
+    msgEl.textContent = "Merci d'indiquer votre nom.";
+    msgEl.className = 'form-error';
+    return;
+  }
+  if(!SUPABASE_ENABLED){
+    msgEl.textContent = "L'envoi d'avis nécessite une connexion. Réessayez plus tard.";
+    msgEl.className = 'form-error';
+    return;
+  }
+  try{
+    const { error } = await db.from('reviews').insert({
+      catalog_item_id: itemId, customer_name: name, rating, comment: commentEl.value.trim() || null, is_approved: false
+    });
+    if(error) throw error;
+    nameEl.value = ''; commentEl.value = ''; selectedRatings[itemId] = 0;
+    selectStarRating(itemId, 0);
+    msgEl.textContent = "Merci pour votre avis ! Il sera visible après validation.";
+    msgEl.className = 'card-sub';
+  }catch(e){
+    msgEl.textContent = "Échec de l'envoi. Réessayez.";
+    msgEl.className = 'form-error';
+    console.error(e);
+  }
+}
+
 async function initHeroSlideshow(){
   const section = document.getElementById('heroSlideshow');
   if(!section || !SUPABASE_ENABLED) return;
@@ -479,7 +629,10 @@ function rowToItem(row){
     id: row.id, name: row.name, code: row.code || null, slug: row.slug || row.id,
     imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(Boolean) : (row.image_url ? [row.image_url] : []),
     inStock: row.in_stock, customizable: row.customizable, promo: row.promo,
-    seoTitle: row.seo_title || "", seoDescription: row.seo_description || ""
+    seoTitle: row.seo_title || "", seoDescription: row.seo_description || "",
+    sortOrder: row.sort_order ?? 0,
+    isDimensionBased: !!row.is_dimension_based,
+    pricePerSqft: row.price_per_sqft != null ? Number(row.price_per_sqft) : null
   };
   if(row.kind === 'services'){
     item.description = row.description;
@@ -500,7 +653,9 @@ function itemToRow(kind, item){
     old_price: kind === 'products' ? (item.oldPrice ?? null) : null,
     starting_price: kind === 'services' ? (item.startingPrice ?? 0) : null,
     promo: !!item.promo, in_stock: item.inStock !== false, customizable: !!item.customizable,
-    seo_title: item.seoTitle || null, seo_description: item.seoDescription || null
+    seo_title: item.seoTitle || null, seo_description: item.seoDescription || null,
+    is_dimension_based: !!item.isDimensionBased,
+    price_per_sqft: item.isDimensionBased ? (item.pricePerSqft ?? 0) : null
   };
 }
 async function fetchCatalogFromSupabase(){
@@ -550,6 +705,8 @@ function itemUrlPath(item){
    STATE
    ========================================================= */
 let cart = loadCart();      // {itemId: qty}, persistant
+const CUSTOM_CART_STORAGE_KEY = "jc_multimedia_custom_cart_v1";
+let customCart = loadCustomCart(); // [{id, itemId, name, code, price, qty, widthIn, heightIn, dimensionsLabel, kind}]
 let uiQty = {};              // quantité en attente sur les cartes avant "Ajouter au panier"
 rebuildIndex();
 
@@ -561,6 +718,12 @@ function loadCart(){
 }
 function saveCart(){ safeSet(CART_STORAGE_KEY, cart); }
 
+function loadCustomCart(){
+  const stored = safeGet(CUSTOM_CART_STORAGE_KEY);
+  return Array.isArray(stored) ? stored : [];
+}
+function saveCustomCart(){ safeSet(CUSTOM_CART_STORAGE_KEY, customCart); }
+
 /* =========================================================
    RENDER — carte partagée boutique/services, avec recherche et stock
    ========================================================= */
@@ -568,7 +731,9 @@ function cardHTML(item){
   const name = escapeHtml(item.name);
   const subText = escapeHtml(item.utility || item.description || "");
   const outOfStock = item.inStock === false;
-  const priceBlock = isEstimate(item)
+  const priceBlock = item.isDimensionBased
+    ? `<div class="price-row"><span class="price">$${(item.pricePerSqft||0).toFixed(2)} / pi²</span></div><p class="card-sub" style="margin-top:-8px;">Indiquez les dimensions</p>`
+    : isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
     : `<div class="price-row">
          <span class="price">${priceDualInline(item.price)}</span>
@@ -585,12 +750,16 @@ function cardHTML(item){
         <h3><a href="${itemUrlPath(item)}" class="card-title-link">${name}</a></h3>
         ${subText ? `<p class="card-sub">${subText}</p>` : ''}
         ${priceBlock}
+        ${item.isDimensionBased ? `
+        <a class="add-btn" style="display:block; text-align:center; text-decoration:none;" href="${itemUrlPath(item)}">Indiquer les dimensions</a>
+        ` : `
         <div class="qty-row">
           <button class="qty-btn" onclick="stepQty('${item.id}',-1)" aria-label="Diminuer la quantité">−</button>
           <span class="qty-val" data-qty-display="${item.id}">${uiQty[item.id]}</span>
           <button class="qty-btn" onclick="stepQty('${item.id}',1)" aria-label="Augmenter la quantité">+</button>
         </div>
         <button class="add-btn" id="add-${item.id}" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${item.id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
+        `}
       </div>
     </div>`;
 }
@@ -622,6 +791,23 @@ function renderGrid(){
       : `<p class="card-sub">${CATALOG.services.length === 0 ? "Nos services seront bientôt détaillés ici — revenez vite !" : "Aucun service ne correspond à votre recherche."}</p>`;
   }
 
+  // Aperçus sur l'accueil — 10 articles maximum, sans filtre de recherche.
+  // L'ordre suit celui défini dans l'admin (onglet Catalogue, flèches de
+  // réorganisation) — si l'admin change la position d'un article, l'accueil
+  // se met à jour automatiquement.
+  const productGridHome = document.getElementById('productGridHome');
+  if(productGridHome){
+    productGridHome.innerHTML = CATALOG.products.length
+      ? CATALOG.products.slice(0,10).map(cardHTML).join('')
+      : `<p class="card-sub">La boutique sera bientôt garnie — revenez vite !</p>`;
+  }
+  const serviceGridHome = document.getElementById('serviceGridHome');
+  if(serviceGridHome){
+    serviceGridHome.innerHTML = CATALOG.services.length
+      ? CATALOG.services.slice(0,10).map(cardHTML).join('')
+      : `<p class="card-sub">Nos services seront bientôt détaillés ici — revenez vite !</p>`;
+  }
+
   const promoSection = document.getElementById('promoSection');
   const promoGrid = document.getElementById('promoGrid');
   if(promoSection && promoGrid){
@@ -638,6 +824,63 @@ function renderGrid(){
 function stepQty(id, delta){
   uiQty[id] = Math.min(MAX_QTY, Math.max(1, (uiQty[id]||1) + delta));
   document.querySelectorAll(`[data-qty-display="${id}"]`).forEach(el => el.textContent = uiQty[id]);
+}
+/* ---- Calcul au pied carré (largeur × longueur en pouces) ---- */
+function computeSqftPrice(widthIn, heightIn, pricePerSqft){
+  const sqft = (widthIn * heightIn) / 144;
+  return sqft * pricePerSqft;
+}
+function updateDimensionPrice(id){
+  const item = ALL_ITEMS[id];
+  if(!item) return;
+  const widthEl = document.getElementById('dimWidth-'+id);
+  const heightEl = document.getElementById('dimHeight-'+id);
+  const priceEl = document.getElementById('dimComputedPrice-'+id);
+  const btn = document.getElementById('dimAddBtn-'+id);
+  const width = parseFloat(widthEl.value);
+  const height = parseFloat(heightEl.value);
+  const qty = uiQty[id] || 1;
+  if(!(width > 0) || !(height > 0)){
+    priceEl.innerHTML = '';
+    btn.disabled = true;
+    btn.textContent = 'Indiquez les dimensions';
+    return;
+  }
+  const unit = computeSqftPrice(width, height, item.pricePerSqft || 0);
+  const total = unit * qty;
+  priceEl.innerHTML = `<strong>${formatUSD(total)}</strong> <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(total)}</span>${qty>1 ? ` <span class="card-sub">(${formatUSD(unit)} / unité)</span>` : ''}`;
+  btn.disabled = false;
+  btn.textContent = 'Ajouter au panier';
+}
+function addDimensionalToCart(id){
+  const item = ALL_ITEMS[id];
+  if(!item) return;
+  const width = parseFloat(document.getElementById('dimWidth-'+id).value);
+  const height = parseFloat(document.getElementById('dimHeight-'+id).value);
+  if(!(width > 0) || !(height > 0)) return;
+  const qty = uiQty[id] || 1;
+  const unit = computeSqftPrice(width, height, item.pricePerSqft || 0);
+  const lineId = 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  customCart.push({
+    id: lineId,
+    itemId: item.id,
+    name: item.name,
+    code: item.code || null,
+    price: unit,
+    qty,
+    widthIn: width,
+    heightIn: height,
+    dimensionsLabel: `${width}" × ${height}" (${(width*height/144).toFixed(2)} pi²)`,
+    kind: isEstimate(item) ? 'services' : 'products'
+  });
+  saveCustomCart();
+  updateBadge();
+  uiQty[id] = 1;
+  document.getElementById('dimWidth-'+id).value = '';
+  document.getElementById('dimHeight-'+id).value = '';
+  document.querySelectorAll(`[data-qty-display="${id}"]`).forEach(el => el.textContent = 1);
+  updateDimensionPrice(id);
+  showToast(item.name + " ajouté au panier");
 }
 function addToCart(id){
   const item = ALL_ITEMS[id];
@@ -657,7 +900,7 @@ function addToCart(id){
   showToast(item.name + " ajouté au panier");
 }
 function updateBadge(){
-  const count = Object.values(cart).reduce((a,b)=>a+b,0);
+  const count = Object.values(cart).reduce((a,b)=>a+b,0) + customCart.reduce((s,l)=>s+l.qty,0);
   const badge = document.getElementById('cartBadge');
   if(count > 0){ badge.style.display='flex'; badge.textContent = count; }
   else { badge.style.display='none'; }
@@ -683,7 +926,9 @@ function renderItemDetail(id){
   const subText = escapeHtml(item.utility || item.description || "");
   const outOfStock = item.inStock === false;
   const images = (item.imageUrls && item.imageUrls.length) ? item.imageUrls : [];
-  const priceBlock = isEstimate(item)
+  const priceBlock = item.isDimensionBased
+    ? `<div class="price-row"><span class="price">$${(item.pricePerSqft||0).toFixed(2)} / pi²</span></div><p class="card-sub" style="margin-top:-6px;">Indiquez les dimensions ci-dessous</p>`
+    : isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
     : `<div class="price-row"><span class="price">${priceDualInline(item.price)}</span>${item.oldPrice ? `<span class="price-old">$${item.oldPrice.toFixed(2)}</span>` : ''}</div>`;
 
@@ -718,6 +963,12 @@ function renderItemDetail(id){
   setMeta('ogDescriptionMeta', seoDesc);
   setMeta('twitterTitleMeta', seoTitle);
   setMeta('twitterDescriptionMeta', seoDesc);
+  // Si l'article a une vraie photo hébergée, on l'utilise pour l'aperçu
+  // de partage (WhatsApp/Facebook) au lieu du logo générique.
+  if(item.imageUrls && item.imageUrls[0]){
+    setMeta('ogImageMeta', item.imageUrls[0]);
+    setMeta('twitterImageMeta', item.imageUrls[0]);
+  }
   const canonicalEl = document.getElementById('canonicalLink');
   if(canonicalEl) canonicalEl.href = window.location.origin + itemUrlPath(item);
 
@@ -739,41 +990,104 @@ function renderItemDetail(id){
     ${item.code ? `<p class="item-code-tag" style="display:inline-block; margin-bottom:10px;">${escapeHtml(item.code)}</p>` : ''}
     ${subText ? `<p class="card-sub" style="font-size:1rem;">${subText}</p>` : ''}
     ${priceBlock}
+    ${item.isDimensionBased ? `
+    <div class="form-field"><label>Format</label>
+      <div class="dim-format-badge">Pied carré — $${(item.pricePerSqft||0).toFixed(2)}/pi²</div>
+    </div>
+    <div class="form-field"><label>Dimensions (en pouces)</label>
+      <div class="dim-inputs">
+        <input type="number" min="0.1" step="0.1" id="dimWidth-${id}" placeholder="Largeur" inputmode="decimal" oninput="updateDimensionPrice('${id}')">
+        <span>×</span>
+        <input type="number" min="0.1" step="0.1" id="dimHeight-${id}" placeholder="Longueur" inputmode="decimal" oninput="updateDimensionPrice('${id}')">
+        <span>pouces</span>
+      </div>
+    </div>
+    <div class="qty-row">
+      <button class="qty-btn" onclick="stepQty('${id}',-1); updateDimensionPrice('${id}')" aria-label="Diminuer la quantité">−</button>
+      <span class="qty-val" data-qty-display="${id}">${uiQty[id]}</span>
+      <button class="qty-btn" onclick="stepQty('${id}',1); updateDimensionPrice('${id}')" aria-label="Augmenter la quantité">+</button>
+    </div>
+    <div id="dimComputedPrice-${id}" class="dim-computed-price"></div>
+    <button class="add-btn" style="max-width:280px;" id="dimAddBtn-${id}" disabled onclick="addDimensionalToCart('${id}')">Indiquez les dimensions</button>
+    ` : `
     <div class="qty-row">
       <button class="qty-btn" onclick="stepQty('${id}',-1)" aria-label="Diminuer la quantité">−</button>
       <span class="qty-val" data-qty-display="${id}">${uiQty[id]}</span>
       <button class="qty-btn" onclick="stepQty('${id}',1)" aria-label="Augmenter la quantité">+</button>
     </div>
     <button class="add-btn" style="max-width:280px;" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
+    `}
     <button class="btn btn-ghost" style="margin-top:12px;" onclick="copyItemLink()">Copier le lien de cette page</button>
+
+    <div class="item-reviews-section">
+      <h3>Avis clients</h3>
+      <div id="itemRatingSummary" class="rating-summary"></div>
+      <div id="itemReviewsList"></div>
+
+      <h3 style="margin-top:24px;">Laisser un avis</h3>
+      <div class="form-field">
+        <label>Votre note</label>
+        ${starRowHTML(0, id)}
+      </div>
+      <div class="form-field"><label for="reviewerName-${id}">Votre nom</label><input type="text" id="reviewerName-${id}"></div>
+      <div class="form-field"><label for="reviewerComment-${id}">Commentaire (optionnel)</label><textarea id="reviewerComment-${id}" rows="3"></textarea></div>
+      <button class="btn btn-primary" onclick="submitItemReview('${id}')">Envoyer mon avis</button>
+      <p id="itemReviewMsg-${id}" class="card-sub" style="display:none;"></p>
+    </div>
   `;
+  initItemReviews(id, seoDesc);
 }
-function injectItemStructuredData(item, description){
+function injectItemStructuredData(item, description, ratingSummary){
   const existing = document.getElementById('itemStructuredData');
   if(existing) existing.remove();
 
   const isService = isEstimate(item);
   const price = isService ? item.startingPrice : item.price;
+  const url = window.location.origin + itemUrlPath(item);
   const data = {
     "@context": "https://schema.org",
     "@type": isService ? "Service" : "Product",
     "name": item.name,
-    "url": window.location.origin + '/article/' + item.id
+    "url": url
   };
   if(description || item.utility || item.description) data.description = description || item.utility || item.description;
   if(item.imageUrls && item.imageUrls.length) data.image = item.imageUrls;
   if(item.code) data[isService ? "serviceType" : "sku"] = item.code;
+  if(ratingSummary && ratingSummary.rating_count > 0){
+    // Notes réellement laissées par des clients (jamais inventées) —
+    // ajoutées seulement si au moins un avis existe.
+    data.aggregateRating = {
+      "@type": "AggregateRating",
+      "ratingValue": ratingSummary.avg_rating,
+      "reviewCount": ratingSummary.rating_count
+    };
+  }
   if(!isService){
     data.brand = { "@type": "Brand", "name": "JC Multimedia" };
+    if(!item.isDimensionBased){
+      data.offers = {
+        "@type": "Offer",
+        "priceCurrency": "USD",
+        "price": price,
+        "availability": item.inStock === false ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+        "url": url
+      };
+    }
+  } else if(item.isDimensionBased && item.pricePerSqft > 0){
+    // Prix calculé au pied carré : pas de prix fixe à annoncer, on
+    // décrit le tarif unitaire plutôt que d'inventer un prix total.
     data.offers = {
       "@type": "Offer",
-      "priceCurrency": "USD",
-      "price": price,
-      "availability": item.inStock === false ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
-      "url": window.location.origin + '/article/' + item.id
+      "priceSpecification": {
+        "@type": "UnitPriceSpecification",
+        "price": item.pricePerSqft,
+        "priceCurrency": "USD",
+        "unitText": "pi²"
+      },
+      "url": url
     };
   } else if(price != null){
-    data.offers = { "@type": "Offer", "priceCurrency": "USD", "price": price, "url": window.location.origin + '/article/' + item.id };
+    data.offers = { "@type": "Offer", "priceCurrency": "USD", "price": price, "url": url };
   }
 
   const script = document.createElement('script');
@@ -897,7 +1211,9 @@ function closeCart(){
 }
 
 function cartEntries(){
-  return Object.entries(cart).filter(([id,qty])=>qty>0 && ALL_ITEMS[id]).map(([id,qty])=>({...ALL_ITEMS[id], qty}));
+  const regular = Object.entries(cart).filter(([id,qty])=>qty>0 && ALL_ITEMS[id]).map(([id,qty])=>({...ALL_ITEMS[id], qty}));
+  const custom = customCart.map(line => ({...line, isCustomLine:true}));
+  return [...regular, ...custom];
 }
 function cartTotal(){
   return cartEntries().reduce((sum,item)=> sum + unitPrice(item)*item.qty, 0);
@@ -915,16 +1231,17 @@ function renderCart(){
   itemsEl.innerHTML = items.map(item => `
     <div class="cart-item">
       <div>
-        <div class="ci-name">${item.name}</div>
+        <div class="ci-name">${escapeHtml(item.name)}</div>
+        ${item.dimensionsLabel ? `<div class="card-sub" style="margin:2px 0;">${escapeHtml(item.dimensionsLabel)}</div>` : ''}
         <div class="ci-price">${item.qty} × ${isEstimate(item) ? 'à partir de ' : ''}${formatUSD(unitPrice(item))} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(unitPrice(item))}</span></div>
       </div>
       <div class="ci-controls">
         <div class="qty-row-sm">
-          <button class="qty-btn" onclick="changeCartQty('${item.id}',-1)" aria-label="Diminuer la quantité de ${item.name}">−</button>
+          <button class="qty-btn" onclick="changeCartQty('${item.id}',-1)" aria-label="Diminuer la quantité de ${escapeHtml(item.name)}">−</button>
           <span class="qty-val">${item.qty}</span>
-          <button class="qty-btn" onclick="changeCartQty('${item.id}',1)" aria-label="Augmenter la quantité de ${item.name}">+</button>
+          <button class="qty-btn" onclick="changeCartQty('${item.id}',1)" aria-label="Augmenter la quantité de ${escapeHtml(item.name)}">+</button>
         </div>
-        <button class="ci-remove" onclick="removeFromCart('${item.id}')" aria-label="Retirer ${item.name} du panier">✕</button>
+        <button class="ci-remove" onclick="removeFromCart('${item.id}')" aria-label="Retirer ${escapeHtml(item.name)} du panier">✕</button>
       </div>
     </div>
   `).join('');
@@ -941,6 +1258,14 @@ function renderCart(){
   `;
 }
 function changeCartQty(id, delta){
+  const customLine = customCart.find(l => l.id === id);
+  if(customLine){
+    customLine.qty = Math.min(MAX_QTY, Math.max(1, customLine.qty + delta));
+    saveCustomCart();
+    renderCart();
+    updateBadge();
+    return;
+  }
   const next = Math.min(MAX_QTY, Math.max(1, (cart[id] || 1) + delta));
   cart[id] = next;
   saveCart();
@@ -948,6 +1273,13 @@ function changeCartQty(id, delta){
   updateBadge();
 }
 function removeFromCart(id){
+  if(customCart.some(l => l.id === id)){
+    customCart = customCart.filter(l => l.id !== id);
+    saveCustomCart();
+    renderCart();
+    updateBadge();
+    return;
+  }
   delete cart[id];
   saveCart();
   renderCart();
@@ -955,6 +1287,8 @@ function removeFromCart(id){
 }
 function clearCart(){
   cart = {};
+  customCart = [];
+  saveCustomCart();
   saveCart();
   renderCart();
   updateBadge();
@@ -1209,9 +1543,9 @@ async function sendOrder(){
         customer_phone: orderFlow.customerPhone,
         customer_address: orderFlow.customerAddress || null,
         items: items.map(i => ({
-          name: i.name,
+          name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
           qty: i.qty,
-          kind: isEstimate(i) ? 'services' : 'products',
+          kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
           customized: orderFlow.customizedItems.includes(i.id)
         })),
         total: total,
@@ -1230,10 +1564,10 @@ async function sendOrder(){
       // change jamais l'historique de cette commande.
       const lineRows = items.map(i => ({
         order_id: orderId,
-        catalog_item_id: i.id,
-        kind: isEstimate(i) ? 'services' : 'products',
+        catalog_item_id: i.itemId || i.id,
+        kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
         code: i.code || null,
-        name: i.name,
+        name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
         unit_price: unitPrice(i),
         is_estimate: isEstimate(i),
         quantity: i.qty,
@@ -1310,9 +1644,10 @@ async function sendOrder(){
   items.forEach(i => {
     const tag = orderFlow.customizedItems.includes(i.id) ? " _(à personnaliser)_" : "";
     const codeTag = i.code ? ` (${i.code})` : "";
+    const dimTag = i.dimensionsLabel ? ` — ${i.dimensionsLabel}` : "";
     const lineTotal = unitPrice(i) * i.qty;
     const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatUSD(lineTotal)} (≈ ${formatHTG(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
-    msg += `▪ ${i.name}${codeTag} × ${i.qty}${tag}%0A   ${amount}%0A`;
+    msg += `▪ ${i.name}${codeTag} × ${i.qty}${tag}${dimTag}%0A   ${amount}%0A`;
   });
   msg += `%0A${SEP}`;
 
@@ -1446,7 +1781,7 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','banner','portfolio','orders','files','customers','settings'].forEach(t=>{
+  ['dashboard','catalog','content','banner','portfolio','reviews','orders','files','customers','settings'].forEach(t=>{
     document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
@@ -1455,10 +1790,76 @@ function showAdminTab(name){
   if(name==='content') renderAdminContent();
   if(name==='banner') renderAdminBanner();
   if(name==='portfolio') renderAdminPortfolio();
+  if(name==='reviews') renderAdminReviews();
   if(name==='orders') renderAdminOrders();
   if(name==='files') renderAdminFiles();
   if(name==='customers') renderAdminCustomers();
   if(name==='settings') renderAdminSettings();
+}
+
+/* ---- Avis (modération) ---- */
+async function renderAdminReviews(){
+  const el = document.getElementById('adminTab-reviews');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ La modération des avis nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('reviews').select('*').order('created_at', { ascending:false });
+    if(error) throw error;
+    const pending = (data||[]).filter(r => !r.is_approved);
+    const approved = (data||[]).filter(r => r.is_approved);
+    const reviewRow = r => `
+      <div class="admin-order-card" id="review-${r.id}">
+        <div class="admin-order-head">
+          <strong>${escapeHtml(r.customer_name)}</strong>
+          <span class="mono">${new Date(r.created_at).toLocaleDateString('fr-FR')}</span>
+        </div>
+        ${r.rating ? `<div>${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)} ${r.catalog_item_id ? `<span class="item-code-tag">${escapeHtml(r.catalog_item_id)}</span>` : ''}</div>` : '<span class="item-code-tag">Commentaire général (accueil)</span>'}
+        ${r.comment ? `<p style="margin:8px 0;">${escapeHtml(r.comment).replace(/\n/g,'<br>')}</p>` : ''}
+        <div class="modal-actions">
+          ${!r.is_approved ? `<button class="btn btn-primary" onclick="adminSetReviewApproval(${r.id}, true)">Approuver</button>` : `<button class="btn btn-ghost" onclick="adminSetReviewApproval(${r.id}, false)">Masquer</button>`}
+          <button class="btn btn-ghost" onclick="adminDeleteReview(${r.id})">Supprimer</button>
+        </div>
+      </div>
+    `;
+    el.innerHTML = `
+      <div class="admin-note">Un avis n'apparaît publiquement qu'une fois approuvé ici.</div>
+      <h3 style="margin-top:0;">En attente (${pending.length})</h3>
+      ${pending.length ? pending.map(reviewRow).join('') : '<p class="card-sub">Aucun avis en attente.</p>'}
+      <h3>Approuvés (${approved.length})</h3>
+      ${approved.length ? approved.map(reviewRow).join('') : '<p class="card-sub">Aucun avis approuvé pour le moment.</p>'}
+    `;
+  }catch(e){
+    el.innerHTML = `<div class="admin-note">Échec du chargement des avis.</div>`;
+    console.error(e);
+  }
+}
+async function adminSetReviewApproval(id, approve){
+  try{
+    const { error } = await db.from('reviews').update({ is_approved: approve }).eq('id', id);
+    if(error) throw error;
+    showToast(approve ? "Avis approuvé" : "Avis masqué");
+    renderAdminReviews();
+  }catch(e){
+    showToast("Échec de la mise à jour");
+    console.error(e);
+  }
+}
+async function adminDeleteReview(id){
+  showConfirmModal("Supprimer définitivement cet avis ?", async () => {
+    try{
+      const { error } = await db.from('reviews').delete().eq('id', id);
+      if(error) throw error;
+      const el = document.getElementById('review-'+id);
+      if(el) el.remove();
+      showToast("Avis supprimé");
+    }catch(e){
+      showToast("Échec de la suppression");
+      console.error(e);
+    }
+  });
 }
 
 /* ---- Clients ---- */
@@ -2152,18 +2553,46 @@ function renderAdminCatalog(){
 }
 function renderAdminItemList(kind){
   const container = document.getElementById(kind==='products' ? 'adminProductsList' : 'adminServicesList');
-  container.innerHTML = CATALOG[kind].map(item => adminItemRowHTML(kind, item)).join('') || '<p class="card-sub">Aucun article.</p>';
+  container.innerHTML = CATALOG[kind].map((item, idx) => adminItemRowHTML(kind, item, idx, CATALOG[kind].length)).join('') || '<p class="card-sub">Aucun article.</p>';
 }
-function adminItemRowHTML(kind, item){
+async function adminMoveCatalogItem(kind, idx, dir){
+  const arr = CATALOG[kind];
+  const otherIdx = idx + dir;
+  if(otherIdx < 0 || otherIdx >= arr.length) return;
+  const a = arr[idx], b = arr[otherIdx];
+  const aOrder = a.sortOrder ?? idx, bOrder = b.sortOrder ?? otherIdx;
+  a.sortOrder = bOrder; b.sortOrder = aOrder;
+  [arr[idx], arr[otherIdx]] = [arr[otherIdx], arr[idx]];
+  renderAdminItemList(kind);
+  rebuildIndex();
+  renderGrid();
+  saveCatalogLocal();
+  if(SUPABASE_ENABLED){
+    try{
+      await db.from('catalog_items').update({ sort_order: a.sortOrder }).eq('id', a.id);
+      await db.from('catalog_items').update({ sort_order: b.sortOrder }).eq('id', b.id);
+    }catch(e){
+      showToast("Échec de l'enregistrement de l'ordre");
+      console.error(e);
+    }
+  }
+}
+function adminItemRowHTML(kind, item, idx, total){
   const isService = kind === 'services';
   const rawPrice = isService ? (item.startingPrice ?? null) : (item.price ?? 0);
-  const priceLabel = rawPrice != null ? `$${rawPrice.toFixed(2)} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(rawPrice)}</span>` : '—';
+  const priceLabel = item.isDimensionBased
+    ? `$${(item.pricePerSqft||0).toFixed(2)}/pi² <span class="price-htg" style="display:inline; margin:0;">au pied carré</span>`
+    : (rawPrice != null ? `$${rawPrice.toFixed(2)} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(rawPrice)}</span>` : '—');
   return `
   <div class="admin-item-row" id="adminrow-${item.id}">
     <div class="admin-item-summary" onclick="toggleAdminEdit('${item.id}')">
       <span>${item.name || '(sans nom)'} ${item.code ? `<span class="item-code-tag">${item.code}</span>` : ''}</span>
       <span class="admin-item-price">${priceLabel}</span>
       ${!isService && item.inStock===false ? '<span class="stock-flag" style="position:static;">Rupture</span>' : ''}
+      <div style="display:flex; gap:4px;">
+        <button class="qty-btn" onclick="event.stopPropagation(); adminMoveCatalogItem('${kind}', ${idx}, -1)" ${idx===0?'disabled':''} aria-label="Monter">↑</button>
+        <button class="qty-btn" onclick="event.stopPropagation(); adminMoveCatalogItem('${kind}', ${idx}, 1)" ${idx===total-1?'disabled':''} aria-label="Descendre">↓</button>
+      </div>
     </div>
     <div class="admin-item-edit" id="adminedit-${item.id}" style="display:none;">
       <div class="form-field"><label>Nom</label><input type="text" id="f-name-${item.id}" value="${(item.name||'').replace(/"/g,'&quot;')}"></div>
@@ -2179,25 +2608,43 @@ function adminItemRowHTML(kind, item){
           `).join('')}
         </div>
       </div>
+      <div class="admin-note" style="margin-bottom:6px;">
+        <label class="check-row" style="margin-bottom:0;">
+          <input type="checkbox" id="f-dimbased-${item.id}" ${item.isDimensionBased?'checked':''} onchange="toggleDimensionPricing('${item.id}')">
+          Calcul au pied carré (le client indique largeur × longueur en pouces, prix calculé automatiquement)
+        </label>
+      </div>
+      <div id="f-dimprice-wrap-${item.id}" style="display:${item.isDimensionBased?'block':'none'};">
+        <div class="form-field"><label>Prix par pied carré ($/pi²)</label><input type="number" step="0.01" min="0" id="f-pricesqft-${item.id}" value="${item.pricePerSqft ?? 0}"></div>
+      </div>
+      <div id="f-normalprice-wrap-${item.id}" style="display:${item.isDimensionBased?'none':'block'};">
       ${isService ? `
         <div class="form-field"><label>Prix de départ ($)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.startingPrice ?? 0}"></div>
       ` : `
         <div class="form-field"><label>Prix ($)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.price ?? 0}"></div>
         <div class="form-field"><label>Ancien prix ($) — laisser vide si pas de promo</label><input type="number" step="0.01" min="0" id="f-oldprice-${item.id}" value="${item.oldPrice ?? ''}"></div>
+      `}
+      </div>
+      ${!isService ? `
         <label class="check-row"><input type="checkbox" id="f-instock-${item.id}" ${item.inStock!==false?'checked':''}> En stock</label>
         <label class="check-row"><input type="checkbox" id="f-custom-${item.id}" ${item.customizable?'checked':''}> Personnalisable</label>
-      `}
+      ` : ''}
       <div class="form-field"><label>Adresse de cette page</label><input type="text" readonly value="https://jc-multimedia.vercel.app${itemUrlPath(item)}" onclick="this.select()"></div>
       <h3 style="margin:18px 0 4px; font-size:.95rem;">SEO de cette fiche (optionnel)</h3>
       <div class="admin-note" style="margin-bottom:10px;">Si laissé vide, un titre/description sont générés automatiquement à partir du nom et de la description ci-dessus.</div>
-      <div class="form-field"><label>Titre pour Google (optionnel)</label><input type="text" id="f-seotitle-${item.id}" value="${(item.seoTitle||'').replace(/"/g,'&quot;')}" placeholder="${item.name} — JC Multimedia"></div>
-      <div class="form-field"><label>Description pour Google (optionnel)</label><input type="text" id="f-seodesc-${item.id}" value="${(item.seoDescription||'').replace(/"/g,'&quot;')}" placeholder="${((item.utility||item.description)||'').slice(0,80)}"></div>
+      <div class="form-field"><label>Titre pour Google (optionnel)</label><input type="text" id="f-seotitle-${item.id}" value="${(item.seoTitle||'').replace(/"/g,'&quot;')}" placeholder="${escapeHtml(item.name)} — JC Multimedia"></div>
+      <div class="form-field"><label>Description pour Google (optionnel)</label><input type="text" id="f-seodesc-${item.id}" value="${(item.seoDescription||'').replace(/"/g,'&quot;')}" placeholder="${escapeHtml(((item.utility||item.description)||'').slice(0,80))}"></div>
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="adminSaveItem('${kind}','${item.id}')" id="save-${item.id}">Enregistrer</button>
         <button class="btn btn-ghost" onclick="adminDeleteItem('${kind}','${item.id}')">Supprimer</button>
       </div>
     </div>
   </div>`;
+}
+function toggleDimensionPricing(id){
+  const checked = document.getElementById('f-dimbased-'+id).checked;
+  document.getElementById('f-dimprice-wrap-'+id).style.display = checked ? 'block' : 'none';
+  document.getElementById('f-normalprice-wrap-'+id).style.display = checked ? 'none' : 'block';
 }
 function toggleAdminEdit(id){
   const el = document.getElementById('adminedit-'+id);
@@ -2240,6 +2687,8 @@ async function adminSaveItem(kind, id){
   }
   item.seoTitle = document.getElementById('f-seotitle-'+id).value.trim();
   item.seoDescription = document.getElementById('f-seodesc-'+id).value.trim();
+  item.isDimensionBased = document.getElementById('f-dimbased-'+id).checked;
+  item.pricePerSqft = parseFloat(document.getElementById('f-pricesqft-'+id).value) || 0;
 
   const imageUrls = item.imageUrls ? [...item.imageUrls] : [];
   const filesToUpload = [];
@@ -2604,6 +3053,7 @@ if(SUPABASE_ENABLED){
   refreshSiteContent();
   refreshPageContent();
   initPortfolio();
+  initHomeReviews();
 } else {
   console.info("Supabase non configuré — le site fonctionne en mode local uniquement. Voir schema-supabase.sql pour activer la synchronisation centralisée.");
 }

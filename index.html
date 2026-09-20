@@ -9,11 +9,11 @@
 <meta property="og:site_name" content="JC Multimedia">
 <meta property="og:title" content="JC Multimedia — Impression, personnalisation, graphisme & solutions digitales">
 <meta property="og:description" content="JC Multimedia — studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding, web design et bien plus. Commandez en ligne, finalisez sur WhatsApp.">
-<meta property="og:image" id="ogImageMeta" content="">
+<meta property="og:image" id="ogImageMeta" content="https://jc-multimedia.vercel.app/og-image.png">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="JC Multimedia">
 <meta name="twitter:description" content="JC Multimedia — studio basé à Port-au-Prince, Haïti. Impression, personnalisation, graphisme, branding, web design et bien plus. Commandez en ligne, finalisez sur WhatsApp.">
-<meta name="twitter:image" id="twitterImageMeta" content="">
+<meta name="twitter:image" id="twitterImageMeta" content="https://jc-multimedia.vercel.app/og-image.png">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" id="faviconLink" href="">
 <link rel="apple-touch-icon" id="appleTouchIconLink" href="">
@@ -129,12 +129,50 @@
   <div class="grid" id="promoGrid"></div>
 </section>
 
+<section class="section" id="boutique">
+  <div class="section-head">
+    <div>
+      <h2>Boutique</h2>
+      <div class="tag">Nos produits</div>
+    </div>
+  </div>
+  <div class="grid grid-home" id="productGridHome"></div>
+  <div class="section-link"><a href="/boutique">Voir plus →</a></div>
+</section>
+
+<section class="section" id="services">
+  <div class="section-head">
+    <div>
+      <h2>Nos services</h2>
+      <div class="tag">Studio JC · sur devis</div>
+    </div>
+  </div>
+  <div class="grid grid-home" id="serviceGridHome"></div>
+  <div class="section-link"><a href="/services">Voir plus →</a></div>
+</section>
+
 <div id="apropos" class="section" style="padding-top:0;">
   <div class="card" style="padding:26px; background:var(--surface2);">
     <h3 style="margin-top:0;">À propos de JC Multimedia</h3>
     <p id="aboutText" style="color:var(--muted); margin:0; max-width:70ch;">Basé à Port-au-Prince, JC Multimedia offre des services de branding, graphic design, web design, personnalisation, etc.</p>
   </div>
 </div>
+
+<section class="section" id="avis">
+  <div class="section-head">
+    <div>
+      <h2>Avis de nos clients</h2>
+      <div class="tag">Votre avis compte</div>
+    </div>
+  </div>
+  <div class="review-form-card">
+    <div class="form-field"><label for="reviewName">Votre nom</label><input type="text" id="reviewName" placeholder="Votre nom"></div>
+    <div class="form-field"><label for="reviewComment">Votre commentaire</label><textarea id="reviewComment" rows="3" placeholder="Partagez votre expérience avec JC Multimedia…"></textarea></div>
+    <button class="btn btn-primary" onclick="submitHomeReview()">Envoyer mon commentaire</button>
+    <p id="reviewFormMsg" class="card-sub" style="display:none;"></p>
+  </div>
+  <div id="homeReviewsList" style="margin-top:22px;"></div>
+</section>
 
 <footer id="contact">
   <div class="footer-in">
