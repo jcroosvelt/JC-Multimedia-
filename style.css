@@ -284,6 +284,10 @@ header.site{
 .card .body{padding:14px; display:flex; flex-direction:column; gap:8px; flex:1;}
 .card h3{font-size:.98rem; margin:0; font-weight:600; color:var(--text);}
 .card-sub{color:var(--muted); font-size:.82rem; line-height:1.5; margin:0;}
+.card .card-sub{
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden;
+}
 .price-row{display:flex; align-items:baseline; gap:8px;}
 .price{font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--navy); font-size:1.05rem;}
 .price.quote-tag{color:var(--coral); font-size:.85rem; text-transform:uppercase; letter-spacing:.04em;}

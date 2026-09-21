@@ -555,6 +555,42 @@ async function refreshPageContent(){
   }
   applyPageContent();
 }
+/* =========================================================
+   COMPRESSION D'IMAGES — réduit poids/dimensions avant envoi vers
+   Supabase, pour un chargement rapide même sur connexion lente.
+   Utilisée à la fois pour les nouveaux envois et pour l'optimisation
+   rétroactive des photos déjà en ligne.
+   ========================================================= */
+function compressImageBlob(blob, maxWidth = 1600, quality = 0.82){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if(width > maxWidth){
+        height = Math.round(height * (maxWidth / width));
+        width = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(newBlob => {
+        if(newBlob) resolve(newBlob); else reject(new Error('Échec de la compression'));
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image illisible')); };
+    img.src = url;
+  });
+}
+function extractStoragePath(url, bucket){
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const idx = url.indexOf(marker);
+  if(idx === -1) return null;
+  return decodeURIComponent(url.slice(idx + marker.length).split('?')[0]);
+}
+
 function escapeHtml(s){
   return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -729,7 +765,9 @@ function saveCustomCart(){ safeSet(CUSTOM_CART_STORAGE_KEY, customCart); }
    ========================================================= */
 function cardHTML(item){
   const name = escapeHtml(item.name);
-  const subText = escapeHtml(item.utility || item.description || "");
+  const rawText = item.utility || item.description || "";
+  const truncatedText = rawText.length > 90 ? rawText.slice(0, 90).trim() + "…" : rawText;
+  const subText = escapeHtml(truncatedText);
   const outOfStock = item.inStock === false;
   const priceBlock = item.isDimensionBased
     ? `<div class="price-row"><span class="price">$${(item.pricePerSqft||0).toFixed(2)} / pi²</span></div><p class="card-sub" style="margin-top:-8px;">Indiquez les dimensions</p>`
@@ -1953,14 +1991,16 @@ async function adminSaveSlide(id){
     const desktopFile = document.getElementById(`slidefile-${id}-desktop`).files[0];
     const mobileFile = document.getElementById(`slidefile-${id}-mobile`).files[0];
     if(desktopFile){
-      const path = `${id}-desktop-${Date.now()}.${(desktopFile.name.split('.').pop()||'jpg')}`;
-      const { error } = await db.storage.from('hero-slides').upload(path, desktopFile, { upsert:true });
+      const compressed = await compressImageBlob(desktopFile).catch(()=>desktopFile);
+      const path = `${id}-desktop-${Date.now()}.jpg`;
+      const { error } = await db.storage.from('hero-slides').upload(path, compressed, { upsert:true, contentType:'image/jpeg' });
       if(error) throw error;
       slide.image_url = db.storage.from('hero-slides').getPublicUrl(path).data.publicUrl;
     }
     if(mobileFile){
-      const path = `${id}-mobile-${Date.now()}.${(mobileFile.name.split('.').pop()||'jpg')}`;
-      const { error } = await db.storage.from('hero-slides').upload(path, mobileFile, { upsert:true });
+      const compressed = await compressImageBlob(mobileFile).catch(()=>mobileFile);
+      const path = `${id}-mobile-${Date.now()}.jpg`;
+      const { error } = await db.storage.from('hero-slides').upload(path, compressed, { upsert:true, contentType:'image/jpeg' });
       if(error) throw error;
       slide.mobile_image_url = db.storage.from('hero-slides').getPublicUrl(path).data.publicUrl;
     }
@@ -2190,9 +2230,9 @@ async function adminSavePortfolioItem(id){
       const fileInput = document.getElementById(`pf-image-${id}-${slot}`);
       const file = fileInput && fileInput.files && fileInput.files[0];
       if(file){
-        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-        const path = `${id}-${slot}-${Date.now()}.${ext}`;
-        const { error: upErr } = await db.storage.from('portfolio-images').upload(path, file, { upsert:true });
+        const compressed = await compressImageBlob(file).catch(()=>file);
+        const path = `${id}-${slot}-${Date.now()}.jpg`;
+        const { error: upErr } = await db.storage.from('portfolio-images').upload(path, compressed, { upsert:true, contentType:'image/jpeg' });
         if(upErr) throw upErr;
         imageUrls[slot] = db.storage.from('portfolio-images').getPublicUrl(path).data.publicUrl;
       }
@@ -2660,9 +2700,9 @@ function previewAdminImage(id, slot){
   reader.readAsDataURL(file);
 }
 async function uploadItemImage(id, slot, file){
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-  const path = `${id}-${slot}-${Date.now()}.${ext}`;
-  const { error } = await db.storage.from('catalog-images').upload(path, file, { upsert: true });
+  const compressed = await compressImageBlob(file).catch(()=>file);
+  const path = `${id}-${slot}-${Date.now()}.jpg`;
+  const { error } = await db.storage.from('catalog-images').upload(path, compressed, { upsert: true, contentType:'image/jpeg' });
   if(error) throw error;
   const { data } = db.storage.from('catalog-images').getPublicUrl(path);
   return data.publicUrl;
@@ -2977,6 +3017,11 @@ function renderAdminSettings(){
     </div>
     <div class="admin-note">Ce taux sert à convertir automatiquement tous les prix (produits et services) affichés en gourdes sur le site. Mettez-le à jour régulièrement pour rester proche du taux réel du marché.</div>
 
+    <h3>Photos déjà en ligne</h3>
+    <div class="admin-note">Les nouvelles photos que vous envoyez sont désormais automatiquement compressées. Pour alléger celles déjà en ligne (catalogue, bannière, portfolio) et accélérer le site sur connexion lente, lancez l'optimisation ci-dessous. Cela peut prendre plusieurs minutes selon le nombre de photos — ne fermez pas cette page pendant l'opération.</div>
+    <button class="btn btn-ghost" id="optimize-images-btn" onclick="optimizeAllImages()">Optimiser toutes les images</button>
+    <div id="optimizeImagesStatus" style="margin-top:10px;"></div>
+
     <h3>Slideshow d'accueil</h3>
     <label class="check-row"><input type="checkbox" id="s-ss-autoplay" ${SETTINGS.slideshowAutoplay!==false?'checked':''}> Défilement automatique</label>
     <div class="form-field"><label>Durée par image (millisecondes)</label><input type="number" step="500" min="1000" id="s-ss-duration" value="${SETTINGS.slideshowDurationMs||5000}"></div>
@@ -2988,6 +3033,62 @@ function renderAdminSettings(){
 
     ${pwSection}
   `;
+}
+async function optimizeAllImages(){
+  if(!SUPABASE_ENABLED){ showToast("Nécessite Supabase"); return; }
+  showConfirmModal(
+    "Optimiser toutes les images déjà en ligne ? Cette opération peut prendre plusieurs minutes selon leur nombre.",
+    async () => {
+      const btn = document.getElementById('optimize-images-btn');
+      const statusEl = document.getElementById('optimizeImagesStatus');
+      if(btn) btn.disabled = true;
+
+      // Rassemble toutes les photos existantes : catalogue, bannière, portfolio.
+      const jobs = [];
+      [...CATALOG.products, ...CATALOG.services].forEach(item => {
+        (item.imageUrls || []).forEach(url => jobs.push({ bucket:'catalog-images', url }));
+      });
+      try{
+        const { data: slides } = await db.from('hero_slides').select('image_url, mobile_image_url');
+        (slides||[]).forEach(s => {
+          if(s.image_url) jobs.push({ bucket:'hero-slides', url: s.image_url });
+          if(s.mobile_image_url) jobs.push({ bucket:'hero-slides', url: s.mobile_image_url });
+        });
+      }catch(e){ console.warn('hero_slides fetch failed:', e); }
+      try{
+        const { data: pItems } = await db.from('portfolio_items').select('image_urls');
+        (pItems||[]).forEach(p => (p.image_urls||[]).forEach(url => jobs.push({ bucket:'portfolio-images', url })));
+      }catch(e){ console.warn('portfolio_items fetch failed:', e); }
+
+      if(jobs.length === 0){
+        statusEl.innerHTML = `<p class="card-sub">Aucune photo trouvée à optimiser.</p>`;
+        if(btn) btn.disabled = false;
+        return;
+      }
+
+      let done = 0, failed = 0;
+      for(const job of jobs){
+        statusEl.innerHTML = `<p class="card-sub">Optimisation en cours… ${done + failed} / ${jobs.length}</p>`;
+        try{
+          const path = extractStoragePath(job.url, job.bucket);
+          if(!path) throw new Error('Chemin introuvable pour ' + job.url);
+          const resp = await fetch(job.url);
+          if(!resp.ok) throw new Error('Téléchargement échoué');
+          const blob = await resp.blob();
+          const compressed = await compressImageBlob(blob);
+          const { error } = await db.storage.from(job.bucket).upload(path, compressed, { upsert:true, contentType:'image/jpeg' });
+          if(error) throw error;
+          done++;
+        }catch(e){
+          failed++;
+          console.warn('optimisation échouée pour', job.url, e);
+        }
+      }
+      statusEl.innerHTML = `<p class="card-sub">Terminé : ${done} photo${done>1?'s':''} optimisée${done>1?'s':''}${failed ? `, ${failed} échec${failed>1?'s':''}` : ''} sur ${jobs.length}.</p>`;
+      if(btn) btn.disabled = false;
+      showToast("Optimisation des images terminée");
+    }
+  );
 }
 async function adminSaveSettings(){
   const val = document.getElementById('s-whatsapp').value.trim();
