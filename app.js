@@ -1441,13 +1441,23 @@ function collectCustomerInfo(){
   orderFlow.customerPhone = phone;
   orderFlow.customerAddress = address;
   const customizableInCart = cartEntries().filter(i => i.customizable);
-  if(customizableInCart.length > 0){ showStepCustomizeAsk(); } else { showStepFiles(); }
+  if(customizableInCart.length > 0){ showStepCustomizeAsk(); } else { goPastCustomize(); }
+}
+/* L'étape "Détails de votre commande" (description + fichiers) n'a de
+   sens que si le client personnalise un article, ou si sa commande
+   contient un service — jamais pour une commande de simples produits
+   sans personnalisation. */
+function shouldShowFilesStep(){
+  return cartEntries().some(i => isEstimate(i)) || orderFlow.customize === true;
+}
+function goPastCustomize(){
+  if(shouldShowFilesStep()){ showStepFiles(); } else { showStepPayment(); }
 }
 function showStepCustomizeAsk(){
   openStep(`
     <h3>Souhaitez-vous personnaliser certains articles ?</h3>
     <button class="opt-btn" onclick="orderFlow.customize=true; showStepCustomizeList();">Oui</button>
-    <button class="opt-btn" onclick="orderFlow.customize=false; showStepFiles();">Non</button>
+    <button class="opt-btn" onclick="orderFlow.customize=false; goPastCustomize();">Non</button>
   `, "Personnalisation des articles");
 }
 const MAX_UPLOAD_FILES = 3;
@@ -1547,11 +1557,15 @@ function handleCustomizeFileChange(slot){
 }
 function showStepPayment(){
   const options = ["MonCash","Natcash","Cash","Virement Bancaire","Carte bancaire"];
+  const hasCustomizableInCart = cartEntries().some(i => i.customizable);
+  const backAction = shouldShowFilesStep()
+    ? "showStepFiles()"
+    : (hasCustomizableInCart ? "showStepCustomizeAsk()" : "showStepCustomerInfo()");
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.payment===o?'selected':''}" onclick="selectPayment('${o}')">${o}</button>`).join('')}
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="showStepFiles()">Retour</button>
+      <button class="btn btn-ghost" onclick="${backAction}">Retour</button>
       <button class="btn btn-primary" onclick="orderFlow.payment ? showStepDelivery() : null">Suivant</button>
     </div>
   `, "Mode de paiement");
