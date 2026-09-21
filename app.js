@@ -691,7 +691,8 @@ function itemToRow(kind, item){
     promo: !!item.promo, in_stock: item.inStock !== false, customizable: !!item.customizable,
     seo_title: item.seoTitle || null, seo_description: item.seoDescription || null,
     is_dimension_based: !!item.isDimensionBased,
-    price_per_sqft: item.isDimensionBased ? (item.pricePerSqft ?? 0) : null
+    price_per_sqft: item.isDimensionBased ? (item.pricePerSqft ?? 0) : null,
+    slug: item.slug
   };
 }
 async function fetchCatalogFromSupabase(){
@@ -2669,7 +2670,11 @@ function adminItemRowHTML(kind, item, idx, total){
         <label class="check-row"><input type="checkbox" id="f-instock-${item.id}" ${item.inStock!==false?'checked':''}> En stock</label>
         <label class="check-row"><input type="checkbox" id="f-custom-${item.id}" ${item.customizable?'checked':''}> Personnalisable</label>
       ` : ''}
-      <div class="form-field"><label>Adresse de cette page</label><input type="text" readonly value="https://jc-multimedia.vercel.app${itemUrlPath(item)}" onclick="this.select()"></div>
+      <div class="form-field">
+        <label>Adresse de cette page</label>
+        <input type="text" readonly value="https://jc-multimedia.vercel.app${itemUrlPath(item)}" onclick="this.select()">
+        <p class="card-sub" style="margin-top:4px;">Se met à jour automatiquement à partir du nom, à chaque enregistrement.</p>
+      </div>
       <h3 style="margin:18px 0 4px; font-size:.95rem;">SEO de cette fiche (optionnel)</h3>
       <div class="admin-note" style="margin-bottom:10px;">Si laissé vide, un titre/description sont générés automatiquement à partir du nom et de la description ci-dessus.</div>
       <div class="form-field"><label>Titre pour Google (optionnel)</label><input type="text" id="f-seotitle-${item.id}" value="${(item.seoTitle||'').replace(/"/g,'&quot;')}" placeholder="${escapeHtml(item.name)} — JC Multimedia"></div>
@@ -2707,11 +2712,31 @@ async function uploadItemImage(id, slot, file){
   const { data } = db.storage.from('catalog-images').getPublicUrl(path);
   return data.publicUrl;
 }
+function slugifyClient(input){
+  let s = (input || '').toLowerCase().trim();
+  const accents = { 'à':'a','á':'a','â':'a','ã':'a','ä':'a','å':'a','è':'e','é':'e','ê':'e','ë':'e','ì':'i','í':'i','î':'i','ï':'i','ò':'o','ó':'o','ô':'o','õ':'o','ö':'o','ù':'u','ú':'u','û':'u','ü':'u','ç':'c','ñ':'n' };
+  s = s.replace(/[àáâãäåèéêëìíîïòóôõöùúûüçñ]/g, ch => accents[ch] || ch);
+  s = s.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return s || 'article';
+}
 async function adminSaveItem(kind, id){
   const item = CATALOG[kind].find(i => i.id === id);
   if(!item) return;
   const btn = document.getElementById('save-'+id);
   item.name = document.getElementById('f-name-'+id).value.trim();
+
+  // L'adresse publique se resynchronise automatiquement avec le nom
+  // actuel à chaque enregistrement — jamais de saisie manuelle.
+  const baseSlug = slugifyClient(item.name);
+  if(baseSlug !== item.slug){
+    let candidate = baseSlug, suffix = 1;
+    const allItems = [...CATALOG.products, ...CATALOG.services];
+    while(allItems.some(other => other.id !== item.id && other.slug === candidate)){
+      suffix++;
+      candidate = `${baseSlug}-${suffix}`;
+    }
+    item.slug = candidate;
+  }
   const desc = document.getElementById('f-desc-'+id).value.trim();
   if(kind === 'services'){
     item.description = desc;

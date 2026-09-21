@@ -13,6 +13,16 @@
     { "source": "/suivi", "destination": "/suivi.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/article/:id", "destination": "/article.html" },
+    {
+      "source": "/boutique/:slug",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*(facebookexternalhit|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Pinterest|SkypeUriPreview|Googlebot).*" }],
+      "destination": "/api/og?section=boutique&slug=:slug"
+    },
+    {
+      "source": "/services/:slug",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*(facebookexternalhit|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Pinterest|SkypeUriPreview|Googlebot).*" }],
+      "destination": "/api/og?section=services&slug=:slug"
+    },
     { "source": "/boutique/:slug", "destination": "/article.html" },
     { "source": "/services/:slug", "destination": "/article.html" }
   ],
