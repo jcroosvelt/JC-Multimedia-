@@ -1010,6 +1010,8 @@ function renderItemDetail(id){
   }
   const canonicalEl = document.getElementById('canonicalLink');
   if(canonicalEl) canonicalEl.href = window.location.origin + itemUrlPath(item);
+  const ogUrlEl = document.getElementById('ogUrlMeta');
+  if(ogUrlEl) ogUrlEl.setAttribute('content', window.location.origin + itemUrlPath(item));
 
   const sectionLabel = isEstimate(item) ? 'Nos services' : 'Boutique';
   const sectionPath = isEstimate(item) ? '/services' : '/boutique';
@@ -1056,8 +1058,7 @@ function renderItemDetail(id){
     </div>
     <button class="add-btn" style="max-width:280px;" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
     `}
-    <button class="btn btn-ghost" style="margin-top:12px;" onclick="copyItemLink()">Copier le lien de cette page</button>
-    <button class="btn btn-ghost" style="margin-top:8px;" onclick="copyShareLink('${id}')">Copier le lien pour WhatsApp (avec photo)</button>
+    <button class="btn btn-ghost" style="margin-top:12px;" onclick="shareItem('${id}')">Partager</button>
 
     <div class="item-reviews-section">
       <h3>Avis clients</h3>
@@ -1144,13 +1145,15 @@ function copyItemLink(){
     showToast(url);
   }
 }
-function copyShareLink(id){
+function shareItem(id){
   const item = ALL_ITEMS[id];
   if(!item) return;
   const section = isEstimate(item) ? 'services' : 'boutique';
   const url = `${window.location.origin}/partage/${section}/${item.slug || item.id}`;
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(url).then(()=> showToast("Lien copié ! Collez-le dans WhatsApp — la photo apparaîtra dans l'aperçu."));
+  if(navigator.share){
+    navigator.share({ title: item.name, url }).catch(()=>{});
+  } else if(navigator.clipboard){
+    navigator.clipboard.writeText(url).then(()=> showToast("Lien copié !"));
   } else {
     showToast(url);
   }
