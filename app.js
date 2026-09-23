@@ -1450,8 +1450,18 @@ function collectCustomerInfo(){
 function shouldShowFilesStep(){
   return cartEntries().some(i => isEstimate(i)) || orderFlow.customize === true;
 }
+/* Une commande de PRODUITS PURS (aucun service) suit un ordre différent :
+   infos → livraison → paiement réel (MonCash/NatCash). Une commande
+   avec au moins un service garde l'ancien parcours : infos → paiement
+   (choix uniquement) → livraison → envoi WhatsApp direct. */
+function isPureProductOrder(){
+  const items = cartEntries();
+  return items.length > 0 && items.every(i => !isEstimate(i));
+}
 function goPastCustomize(){
-  if(shouldShowFilesStep()){ showStepFiles(); } else { showStepPayment(); }
+  if(shouldShowFilesStep()){ showStepFiles(); }
+  else if(isPureProductOrder()){ showStepDelivery(); }
+  else { showStepPayment(); }
 }
 function showStepCustomizeAsk(){
   openStep(`
@@ -1469,30 +1479,96 @@ function showStepCustomizeAsk(){
    définitive de la commande.
    ========================================================= */
 const LAST_PAYMENT_REF_KEY = "jc_multimedia_last_payment_ref";
+function buildWhatsappRecapMessage(summary){
+  const SEP = "─────────────────────%0A";
+  let msg = `✅ *PAIEMENT CONFIRMÉ — JC MULTIMEDIA*%0A${SEP}`;
+  msg += `*Réf. commande :* ${summary.orderCode}%0A%0A`;
+  msg += `*CLIENT*%0ANom : ${summary.customerName}%0ATéléphone : ${summary.customerPhone}%0A`;
+  if(summary.customerAddress) msg += `Adresse : ${summary.customerAddress}%0A`;
+  msg += `%0A${SEP}*ARTICLES*%0A`;
+  (summary.items||[]).forEach(i => {
+    msg += `▪ ${i.name}${i.code ? ` (${i.code})` : ''} × ${i.qty}%0A`;
+  });
+  msg += `%0A${SEP}*Total payé : ${formatUSD(summary.total)}*%0ALivraison : ${summary.delivery}`;
+  msg += `%0A%0A${SEP}Merci pour votre confiance ! Ceci est une confirmation — aucune action supplémentaire n'est requise de votre part.`;
+  return msg;
+}
+
 async function initPaymentReturnPage(){
   const statusEl = document.getElementById('paymentReturnStatus');
   if(!statusEl) return;
   const params = new URLSearchParams(window.location.search);
-  const reference = params.get('reference') || params.get('refference_id') || safeGet(LAST_PAYMENT_REF_KEY);
+  const summary = safeGet(PAYMENT_SUMMARY_KEY);
+  const reference = params.get('reference') || (summary && summary.reference) || safeGet(LAST_PAYMENT_REF_KEY);
 
   if(!reference){
-    statusEl.innerHTML = `<p class="card-sub">Merci ! Si vous venez de finaliser un paiement, il sera confirmé sous peu. Vous pouvez suivre l'état de votre commande à tout moment.</p>`;
+    statusEl.innerHTML = `<p class="card-sub">Merci ! Si vous venez de finaliser un paiement, il sera confirmé sous peu.</p>`;
     return;
   }
+
+  statusEl.innerHTML = `<p class="card-sub">Vérification de votre paiement…</p>`;
 
   try{
     const resp = await fetch(`https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/verify-payment?reference=${encodeURIComponent(reference)}`);
     const data = await resp.json();
+
     if(data.status && data.trans_status === 'ok'){
-      statusEl.innerHTML = `<p class="card-sub">✅ Paiement confirmé pour la commande <strong>${escapeHtml(reference)}</strong>. Merci pour votre confiance !</p>`;
-    } else if(data.status){
-      statusEl.innerHTML = `<p class="card-sub">⏳ Paiement en cours de confirmation pour la commande <strong>${escapeHtml(reference)}</strong>. Cela peut prendre quelques minutes.</p>`;
+      statusEl.innerHTML = `
+        <p class="card-sub">✅ Paiement confirmé${summary ? ` pour la commande <strong>${escapeHtml(summary.orderCode)}</strong>` : ''}. Merci pour votre confiance !</p>
+        ${summary ? `<button class="btn btn-primary" style="margin-top:12px;" onclick="sendWhatsappRecap()">Envoyer la confirmation sur WhatsApp</button>` : ''}
+      `;
+    } else if(data.status && summary){
+      statusEl.innerHTML = `
+        <p class="card-sub">⏳ Le paiement n'a pas été confirmé (annulé, échoué, ou en cours). Vous pouvez réessayer ci-dessous.</p>
+        <div class="form-field" style="margin-top:12px;">
+          <label>Réessayer avec</label>
+          <button class="opt-btn" onclick="retryPayment('moncash')">MonCash</button>
+          <button class="opt-btn" onclick="retryPayment('natcash')">NatCash</button>
+        </div>
+        <p id="retryStatus" class="card-sub" style="margin-top:8px;"></p>
+      `;
     } else {
       throw new Error('vérification indisponible');
     }
   }catch(e){
-    statusEl.innerHTML = `<p class="card-sub">Merci pour votre commande <strong>${escapeHtml(reference)}</strong> ! Nous confirmons votre paiement sous peu.</p>`;
+    statusEl.innerHTML = `<p class="card-sub">Merci ! Nous confirmons votre paiement sous peu. Vous pouvez aussi nous contacter directement si besoin.</p>`;
     console.warn('payment verify failed:', e);
+  }
+}
+
+function sendWhatsappRecap(){
+  const summary = safeGet(PAYMENT_SUMMARY_KEY);
+  if(!summary) return;
+  const msg = buildWhatsappRecapMessage(summary);
+  window.open(`https://wa.me/${SETTINGS.whatsapp}?text=${msg}`, "_blank");
+  safeSet(PAYMENT_SUMMARY_KEY, null);
+}
+
+async function retryPayment(method){
+  const summary = safeGet(PAYMENT_SUMMARY_KEY);
+  const retryEl = document.getElementById('retryStatus');
+  if(!summary){ if(retryEl) retryEl.textContent = "Détails de commande introuvables — contactez-nous directement."; return; }
+  if(retryEl) retryEl.textContent = "Préparation du paiement…";
+  try{
+    const newRef = `${summary.orderCode}-${Date.now()}`;
+    await db.from('payments').update({ reference: newRef }).eq('order_id', summary.orderId);
+    const resp = await fetch(CREATE_PAYMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: newRef, amount: summary.amountHTG, method })
+    });
+    const data = await resp.json();
+    if(!data || !data.status || !data.url){
+      if(retryEl) retryEl.textContent = "Échec — réessayez ou contactez-nous.";
+      return;
+    }
+    summary.reference = newRef;
+    safeSet(PAYMENT_SUMMARY_KEY, summary);
+    safeSet(LAST_PAYMENT_REF_KEY, newRef);
+    window.location.href = data.url;
+  }catch(e){
+    console.error('retryPayment error:', e);
+    if(retryEl) retryEl.textContent = "Erreur — réessayez ou contactez-nous.";
   }
 }
 
@@ -1564,7 +1640,7 @@ function showStepFiles(){
 }
 function collectStepFiles(){
   orderFlow.details = document.getElementById('cfDetails').value.trim();
-  showStepPayment();
+  if(isPureProductOrder()){ showStepDelivery(); } else { showStepPayment(); }
 }
 function showStepFilesBack(){
   const hasCustomizable = cartEntries().some(i => i.customizable);
@@ -1592,35 +1668,113 @@ function handleCustomizeFileChange(slot){
   document.getElementById('cfile-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
 }
 function showStepPayment(){
-  const options = ["MonCash","Natcash","Cash","Virement Bancaire","Carte bancaire"];
+  const options = ["MonCash","Natcash"];
+  const pureProduct = isPureProductOrder();
   const hasCustomizableInCart = cartEntries().some(i => i.customizable);
-  const backAction = shouldShowFilesStep()
-    ? "showStepFiles()"
-    : (hasCustomizableInCart ? "showStepCustomizeAsk()" : "showStepCustomerInfo()");
+  let backAction;
+  if(pureProduct){
+    backAction = "showStepDelivery()";
+  } else {
+    backAction = shouldShowFilesStep()
+      ? "showStepFiles()"
+      : (hasCustomizableInCart ? "showStepCustomizeAsk()" : "showStepCustomerInfo()");
+  }
+  const nextAction = pureProduct
+    ? "orderFlow.payment ? handleRealPayment() : null"
+    : "orderFlow.payment ? showStepDelivery() : null";
+  const nextLabel = pureProduct ? "Payer" : "Suivant";
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.payment===o?'selected':''}" onclick="selectPayment('${o}')">${o}</button>`).join('')}
+    ${pureProduct ? `<p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.</p>` : ''}
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="${backAction}">Retour</button>
-      <button class="btn btn-primary" onclick="orderFlow.payment ? showStepDelivery() : null">Suivant</button>
+      <button class="btn btn-primary" id="paymentNextBtn" onclick="${nextAction}">${nextLabel}</button>
     </div>
   `, "Mode de paiement");
 }
 function selectPayment(o){ orderFlow.payment = o; showStepPayment(); }
 function showStepDelivery(){
   const options = ["Se faire livrer","Récupérer sur place"];
+  const pureProduct = isPureProductOrder();
+  const backAction = pureProduct
+    ? (shouldShowFilesStep() ? "showStepFiles()" : (cartEntries().some(i=>i.customizable) ? "showStepCustomizeAsk()" : "showStepCustomerInfo()"))
+    : "showStepPayment()";
+  const nextAction = pureProduct
+    ? "orderFlow.delivery ? showStepPayment() : null"
+    : "orderFlow.delivery ? handleSendOrderClick() : null";
+  const nextLabel = pureProduct ? "Suivant" : "Envoyer";
   openStep(`
     <h3>Souhaitez-vous être livré ou récupérer sur place ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.delivery===o?'selected':''}" onclick="selectDelivery('${o}')">${o}</button>`).join('')}
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="showStepPayment()">Retour</button>
-      <button class="btn btn-primary" id="sendOrderBtn" onclick="orderFlow.delivery ? handleSendOrderClick() : null">Envoyer</button>
+      <button class="btn btn-ghost" onclick="${backAction}">Retour</button>
+      <button class="btn btn-primary" id="sendOrderBtn" onclick="${nextAction}">${nextLabel}</button>
     </div>
   `, "Livraison ou retrait");
 }
 function selectDelivery(o){ orderFlow.delivery = o; showStepDelivery(); }
 
 let orderSending = false;
+const PAYMENT_SUMMARY_KEY = "jc_multimedia_payment_summary";
+const CREATE_PAYMENT_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/create-payment";
+
+async function handleRealPayment(){
+  const btn = document.getElementById('paymentNextBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Préparation du paiement…'; }
+  try{
+    const method = orderFlow.payment === 'Natcash' ? 'natcash' : 'moncash';
+    const { orderId, orderCode, items, total } = await createOrderRecord();
+
+    if(!orderCode){
+      showToast("Échec de la création de la commande. Réessayez.");
+      if(btn){ btn.disabled = false; btn.textContent = 'Payer'; }
+      return;
+    }
+
+    const paymentRef = `${orderCode}-${Date.now()}`;
+    const amountHTG = Math.max(20, Math.round(total * SETTINGS.exchangeRate));
+
+    // On enregistre la référence de cette tentative de paiement pour
+    // que le webhook puisse retrouver et confirmer le bon paiement.
+    await db.from('payments').update({ reference: paymentRef }).eq('order_id', orderId);
+
+    const resp = await fetch(CREATE_PAYMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: paymentRef, amount: amountHTG, method })
+    });
+    const data = await resp.json();
+
+    if(!data || !data.status || !data.url){
+      showToast("Le paiement en ligne n'a pas pu être initié. Réessayez ou choisissez un autre mode.");
+      if(btn){ btn.disabled = false; btn.textContent = 'Payer'; }
+      return;
+    }
+
+    // Résumé conservé pour reconstruire le message WhatsApp de
+    // confirmation une fois le client revenu sur le site, et pour
+    // permettre une nouvelle tentative sans tout ressaisir.
+    safeSet(PAYMENT_SUMMARY_KEY, {
+      orderId, orderCode, reference: paymentRef, amountHTG, method,
+      customerName: orderFlow.customerName, customerPhone: orderFlow.customerPhone,
+      customerAddress: orderFlow.customerAddress, delivery: orderFlow.delivery,
+      items: items.map(i => ({ name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name, qty: i.qty, code: i.code || null })),
+      total
+    });
+    safeSet(LAST_PAYMENT_REF_KEY, paymentRef);
+
+    cart = {}; customCart = [];
+    saveCart(); saveCustomCart(); updateBadge();
+
+    window.location.href = data.url;
+  }catch(e){
+    console.error('handleRealPayment error:', e);
+    showToast("Une erreur est survenue. Réessayez.");
+    if(btn){ btn.disabled = false; btn.textContent = 'Payer'; }
+  }
+}
+
 async function handleSendOrderClick(){
   if(orderSending) return;
   orderSending = true;
@@ -1633,92 +1787,104 @@ async function handleSendOrderClick(){
   }
 }
 
-async function sendOrder(){
+/* Crée la commande + ses lignes + son enregistrement de paiement dans
+   Supabase. Partagé par les deux parcours (WhatsApp classique et
+   paiement réel MonCash/NatCash) pour ne jamais dupliquer cette
+   logique sensible. paymentReference, si fourni, est la référence
+   unique envoyée à PLOP PLOP pour CETTE tentative de paiement — elle
+   sert ensuite au webhook à retrouver le bon paiement à confirmer. */
+async function createOrderRecord(paymentReference){
   const items = cartEntries();
   const total = cartTotal();
+  let orderCode = null, orderId = null;
 
-  let orderCode = null;
-  let orderId = null;
+  if(!SUPABASE_ENABLED) return { orderId, orderCode, items, total };
 
-  if(SUPABASE_ENABLED){
-    try{
-      const { data, error } = await db.from('orders').insert({
-        customer_name: orderFlow.customerName,
-        customer_phone: orderFlow.customerPhone,
-        customer_address: orderFlow.customerAddress || null,
-        items: items.map(i => ({
-          name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
-          qty: i.qty,
-          kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
-          customized: orderFlow.customizedItems.includes(i.id)
-        })),
-        total: total,
-        exchange_rate: SETTINGS.exchangeRate,
-        payment: orderFlow.payment,
-        delivery: orderFlow.delivery,
-        details: orderFlow.details || null,
-        idempotency_key: orderFlow.idempotencyKey
-      }).select('id, code').single();
-      if(error) throw error;
-      orderId = data.id;
-      orderCode = data.code;
-
-      // Lignes de commande détaillées avec snapshot (prix, code, nom au
-      // moment de l'achat) — une modification future du catalogue ne
-      // change jamais l'historique de cette commande.
-      const lineRows = items.map(i => ({
-        order_id: orderId,
-        catalog_item_id: i.itemId || i.id,
-        kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
-        code: i.code || null,
+  try{
+    const { data, error } = await db.from('orders').insert({
+      customer_name: orderFlow.customerName,
+      customer_phone: orderFlow.customerPhone,
+      customer_address: orderFlow.customerAddress || null,
+      items: items.map(i => ({
         name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
-        unit_price: unitPrice(i),
-        is_estimate: isEstimate(i),
-        quantity: i.qty,
-        customized: orderFlow.customizedItems.includes(i.id),
-        line_total: unitPrice(i) * i.qty
-      }));
-      if(lineRows.length){
-        const { error: itemsError } = await db.from('order_items').insert(lineRows);
-        if(itemsError) console.warn('order_items insert failed:', itemsError);
-      }
+        qty: i.qty,
+        kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
+        customized: orderFlow.customizedItems.includes(i.id)
+      })),
+      total: total,
+      exchange_rate: SETTINGS.exchangeRate,
+      payment: orderFlow.payment,
+      delivery: orderFlow.delivery,
+      details: orderFlow.details || null,
+      idempotency_key: orderFlow.idempotencyKey
+    }).select('id, code').single();
+    if(error) throw error;
+    orderId = data.id;
+    orderCode = data.code;
 
-      // Enregistrement du paiement — TOUJOURS "En attente" au départ.
-      // Choisir un mode de paiement ne veut jamais dire que l'argent a
-      // été reçu ; seul l'admin confirme manuellement après vérification.
-      const { error: paymentError } = await db.from('payments').insert({
-        order_id: orderId,
-        method: orderFlow.payment,
-        amount: total,
-        status: 'En attente'
-      });
-      if(paymentError) console.warn('payment insert failed:', paymentError);
-
-      // Envoi des fichiers joints (logo, design…) — chemin de stockage
-      // toujours généré ici, jamais le nom brut envoyé par le client ;
-      // le nom d'origine est seulement conservé pour affichage à l'admin.
-      const filesToUpload = (orderFlow.uploadFiles || []).filter(Boolean);
-      for(const file of filesToUpload){
-        try{
-          const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
-          const safePath = `${orderId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-          const { error: upErr } = await db.storage.from('order-uploads').upload(safePath, file);
-          if(upErr) throw upErr;
-          await db.from('order_uploads').insert({
-            order_id: orderId,
-            original_filename: file.name,
-            storage_path: safePath,
-            mime_type: file.type,
-            size_bytes: file.size
-          });
-        }catch(e){ console.warn('file upload failed:', e); }
-      }
-    }catch(e){
-      // Si la clé d'idempotence existe déjà (double clic malgré la
-      // protection du bouton), on ne recrée jamais une seconde commande.
-      console.warn('Supabase order insert failed, using local fallback only:', e);
+    // Lignes de commande détaillées avec snapshot (prix, code, nom au
+    // moment de l'achat) — une modification future du catalogue ne
+    // change jamais l'historique de cette commande.
+    const lineRows = items.map(i => ({
+      order_id: orderId,
+      catalog_item_id: i.itemId || i.id,
+      kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
+      code: i.code || null,
+      name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
+      unit_price: unitPrice(i),
+      is_estimate: isEstimate(i),
+      quantity: i.qty,
+      customized: orderFlow.customizedItems.includes(i.id),
+      line_total: unitPrice(i) * i.qty
+    }));
+    if(lineRows.length){
+      const { error: itemsError } = await db.from('order_items').insert(lineRows);
+      if(itemsError) console.warn('order_items insert failed:', itemsError);
     }
+
+    // Enregistrement du paiement — TOUJOURS "En attente" au départ.
+    // Choisir un mode de paiement ne veut jamais dire que l'argent a
+    // été reçu ; seul un vrai paiement confirmé (webhook) ou l'admin
+    // (paiement manuel) changent ce statut ensuite.
+    const { error: paymentError } = await db.from('payments').insert({
+      order_id: orderId,
+      method: orderFlow.payment,
+      amount: total,
+      status: 'En attente',
+      reference: paymentReference || null
+    });
+    if(paymentError) console.warn('payment insert failed:', paymentError);
+
+    // Envoi des fichiers joints (logo, design…) — chemin de stockage
+    // toujours généré ici, jamais le nom brut envoyé par le client ;
+    // le nom d'origine est seulement conservé pour affichage à l'admin.
+    const filesToUpload = (orderFlow.uploadFiles || []).filter(Boolean);
+    for(const file of filesToUpload){
+      try{
+        const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+        const safePath = `${orderId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const { error: upErr } = await db.storage.from('order-uploads').upload(safePath, file);
+        if(upErr) throw upErr;
+        await db.from('order_uploads').insert({
+          order_id: orderId,
+          original_filename: file.name,
+          storage_path: safePath,
+          mime_type: file.type,
+          size_bytes: file.size
+        });
+      }catch(e){ console.warn('file upload failed:', e); }
+    }
+  }catch(e){
+    // Si la clé d'idempotence existe déjà (double clic malgré la
+    // protection du bouton), on ne recrée jamais une seconde commande.
+    console.warn('Supabase order insert failed, using local fallback only:', e);
   }
+
+  return { orderId, orderCode, items, total };
+}
+
+async function sendOrder(){
+  const { orderCode, items, total } = await createOrderRecord();
 
   const orderRecord = {
     date: Date.now(),
