@@ -1801,23 +1801,25 @@ async function createOrderRecord(paymentReference){
   if(!SUPABASE_ENABLED) return { orderId, orderCode, items, total };
 
   try{
-    const { data, error } = await db.from('orders').insert({
-      customer_name: orderFlow.customerName,
-      customer_phone: orderFlow.customerPhone,
-      customer_address: orderFlow.customerAddress || null,
-      items: items.map(i => ({
-        name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
-        qty: i.qty,
-        kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
-        customized: orderFlow.customizedItems.includes(i.id)
-      })),
-      total: total,
-      exchange_rate: SETTINGS.exchangeRate,
-      payment: orderFlow.payment,
-      delivery: orderFlow.delivery,
-      details: orderFlow.details || null,
-      idempotency_key: orderFlow.idempotencyKey
-    }).select('id, code').single();
+    const { data, error } = await db.rpc('create_public_order', {
+      order_data: {
+        customer_name: orderFlow.customerName,
+        customer_phone: orderFlow.customerPhone,
+        customer_address: orderFlow.customerAddress || null,
+        items: items.map(i => ({
+          name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
+          qty: i.qty,
+          kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
+          customized: orderFlow.customizedItems.includes(i.id)
+        })),
+        total: total,
+        exchange_rate: SETTINGS.exchangeRate,
+        payment: orderFlow.payment,
+        delivery: orderFlow.delivery,
+        details: orderFlow.details || null,
+        idempotency_key: orderFlow.idempotencyKey
+      }
+    }).single();
     if(error) throw error;
     orderId = data.id;
     orderCode = data.code;
