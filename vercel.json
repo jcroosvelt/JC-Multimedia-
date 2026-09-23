@@ -11,6 +11,7 @@
     { "source": "/conditions", "destination": "/conditions.html" },
     { "source": "/livraison", "destination": "/livraison.html" },
     { "source": "/suivi", "destination": "/suivi.html" },
+    { "source": "/retour-paiement", "destination": "/retour-paiement.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/article/:id", "destination": "/article.html" },
     { "source": "/boutique/:slug", "destination": "/article.html" },

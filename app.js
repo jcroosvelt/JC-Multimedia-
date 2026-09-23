@@ -1460,6 +1460,42 @@ function showStepCustomizeAsk(){
     <button class="opt-btn" onclick="orderFlow.customize=false; goPastCustomize();">Non</button>
   `, "Personnalisation des articles");
 }
+/* =========================================================
+   RETOUR DE PAIEMENT (PLOP PLOP) — page où le client revient
+   après avoir payé (ou annulé) sur la page hébergée PLOP PLOP.
+   La confirmation officielle du paiement se fait par webhook
+   (voir api/plopplop-webhook.js) ; cette page ne fait qu'un
+   affichage rassurant pour le client, jamais la mise à jour
+   définitive de la commande.
+   ========================================================= */
+const LAST_PAYMENT_REF_KEY = "jc_multimedia_last_payment_ref";
+async function initPaymentReturnPage(){
+  const statusEl = document.getElementById('paymentReturnStatus');
+  if(!statusEl) return;
+  const params = new URLSearchParams(window.location.search);
+  const reference = params.get('reference') || params.get('refference_id') || safeGet(LAST_PAYMENT_REF_KEY);
+
+  if(!reference){
+    statusEl.innerHTML = `<p class="card-sub">Merci ! Si vous venez de finaliser un paiement, il sera confirmé sous peu. Vous pouvez suivre l'état de votre commande à tout moment.</p>`;
+    return;
+  }
+
+  try{
+    const resp = await fetch(`https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/verify-payment?reference=${encodeURIComponent(reference)}`);
+    const data = await resp.json();
+    if(data.status && data.trans_status === 'ok'){
+      statusEl.innerHTML = `<p class="card-sub">✅ Paiement confirmé pour la commande <strong>${escapeHtml(reference)}</strong>. Merci pour votre confiance !</p>`;
+    } else if(data.status){
+      statusEl.innerHTML = `<p class="card-sub">⏳ Paiement en cours de confirmation pour la commande <strong>${escapeHtml(reference)}</strong>. Cela peut prendre quelques minutes.</p>`;
+    } else {
+      throw new Error('vérification indisponible');
+    }
+  }catch(e){
+    statusEl.innerHTML = `<p class="card-sub">Merci pour votre commande <strong>${escapeHtml(reference)}</strong> ! Nous confirmons votre paiement sous peu.</p>`;
+    console.warn('payment verify failed:', e);
+  }
+}
+
 const MAX_UPLOAD_FILES = 3;
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5 Mo
 const ALLOWED_UPLOAD_TYPES = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
@@ -3198,6 +3234,7 @@ applySiteContent();
 applyPageContent();
 if(document.body.dataset.page === 'article') initArticlePage();
 if(document.body.dataset.page === 'admin') checkAdminSession();
+if(document.body.dataset.page === 'retour-paiement') initPaymentReturnPage();
 
 const emailField = document.getElementById('adminEmailField');
 if(emailField) emailField.style.display = SUPABASE_ENABLED ? 'block' : 'none';
