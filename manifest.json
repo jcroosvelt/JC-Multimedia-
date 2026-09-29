@@ -1,0 +1,14 @@
+{
+  "name": "JC Multimedia",
+  "short_name": "JC Multimedia",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B2158",
+  "theme_color": "#0B2158",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

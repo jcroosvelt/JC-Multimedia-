@@ -22,10 +22,6 @@
   var LOGO_URI  = "data:image/png;base64," + LOGO_B64;
 
   function applyLogos(){
-    ["faviconLink","appleTouchIconLink"].forEach(function(id){
-      var el = document.getElementById(id);
-      if(el) el.setAttribute("href", BADGE_URI);
-    });
     ["headerBadgeImg","heroBadgeImg"].forEach(function(id){
       var el = document.getElementById(id);
       if(el) el.src = BADGE_URI;

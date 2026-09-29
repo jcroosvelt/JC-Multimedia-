@@ -69,12 +69,16 @@ let SETTINGS = loadSettingsLocal();
 const MAX_QTY = 500; // quantité maximale par article
 
 /* =========================================================
-   DEVISE — affichage double USD / HTG selon le taux réglé en admin
+   DEVISE — la GOURDE (HTG) est désormais la monnaie de référence
+   du site. Tous les montants (prix, totaux, paiements) sont
+   stockés et manipulés en HTG ; le dollar n'est qu'un affichage
+   secondaire, calculé automatiquement selon le taux réglé en
+   admin — il ne change jamais le prix réel fixé pour un article.
    ========================================================= */
-function htgAmount(usd){ return usd * (SETTINGS.exchangeRate || DEFAULT_SETTINGS.exchangeRate); }
-function formatHTG(usd){ return new Intl.NumberFormat('fr-FR').format(Math.round(htgAmount(usd))) + ' HTG'; }
-function formatUSD(usd){ return '$' + usd.toFixed(2); }
-function priceDualInline(usd){ return `${formatUSD(usd)} <span class="price-htg">≈ ${formatHTG(usd)}</span>`; }
+function usdFromHtg(htg){ return htg / (SETTINGS.exchangeRate || DEFAULT_SETTINGS.exchangeRate); }
+function formatHTG(htg){ return new Intl.NumberFormat('fr-FR').format(Math.round(htg)) + ' HTG'; }
+function formatUSD(htg){ return '$' + usdFromHtg(htg).toFixed(2); }
+function priceDualInline(htg){ return `${formatHTG(htg)} <span class="price-htg">≈ ${formatUSD(htg)}</span>`; }
 
 async function fetchSettingsFromSupabase(){
   if(!SUPABASE_ENABLED) return null;
@@ -717,9 +721,43 @@ async function refreshCatalog(){
     CATALOG = remote;
     saveCatalogLocal(); // on garde une copie locale comme cache hors-ligne
   }
+  await refreshPromos();
   rebuildIndex();
   renderGrid();
   if(document.body.dataset.page === 'article') initArticlePage();
+}
+async function refreshPromos(){
+  // Remet à zéro toute remise précédemment appliquée (au cas où un
+  // article ne serait plus concerné par aucun code promo actif).
+  [...CATALOG.products, ...CATALOG.services].forEach(item => {
+    item.specialPercent = null;
+    item.specialPrice = null;
+    item.specialName = null;
+  });
+  if(!SUPABASE_ENABLED) return;
+  try{
+    const { data: codes } = await db.from('promo_codes').select('id, name, discount_percent').eq('active', true);
+    if(!codes || !codes.length) return;
+    const { data: links } = await db.from('promo_code_items').select('promo_code_id, catalog_item_id');
+    const codeById = {};
+    codes.forEach(c => codeById[c.id] = c);
+    (links||[]).forEach(link => {
+      const code = codeById[link.promo_code_id];
+      if(!code) return;
+      const item = ALL_ITEMS[link.catalog_item_id] || [...CATALOG.products, ...CATALOG.services].find(i => i.id === link.catalog_item_id);
+      if(!item || item.isDimensionBased) return;
+      // Si plusieurs codes s'appliquent au même article, on retient
+      // toujours la remise la plus avantageuse pour le client.
+      if(item.specialPercent == null || code.discount_percent > item.specialPercent){
+        const base = item.startingPrice != null ? item.startingPrice : item.price;
+        item.specialPercent = code.discount_percent;
+        item.specialPrice = Math.round(base * (1 - code.discount_percent / 100) * 100) / 100;
+        item.specialName = code.name;
+      }
+    });
+  }catch(e){
+    console.warn('refreshPromos failed:', e);
+  }
 }
 
 let ALL_ITEMS = {};
@@ -731,7 +769,10 @@ function rebuildIndex(){
 function ensureUiQtyDefaults(){
   [...CATALOG.products, ...CATALOG.services].forEach(item => { if(uiQty[item.id] === undefined) uiQty[item.id] = 1; });
 }
-function unitPrice(item){ return item.startingPrice != null ? item.startingPrice : item.price; }
+function unitPrice(item){
+  if(item.specialPrice != null) return item.specialPrice;
+  return item.startingPrice != null ? item.startingPrice : item.price;
+}
 function isEstimate(item){ return item.startingPrice != null; }
 function itemUrlPath(item){
   const section = isEstimate(item) ? 'services' : 'boutique';
@@ -771,17 +812,22 @@ function cardHTML(item){
   const subText = escapeHtml(truncatedText);
   const outOfStock = item.inStock === false;
   const priceBlock = item.isDimensionBased
-    ? `<div class="price-row"><span class="price">$${(item.pricePerSqft||0).toFixed(2)} / pi²</span></div><p class="card-sub" style="margin-top:-8px;">Indiquez les dimensions</p>`
+    ? `<div class="price-row"><span class="price">${formatHTG(item.pricePerSqft||0)} / pi²</span></div><p class="card-sub" style="margin-top:-8px;">Indiquez les dimensions</p>`
+    : item.specialPercent != null
+    ? `<div class="price-row">
+         <span class="price">${priceDualInline(item.specialPrice)}</span>
+         <span class="price-old">${formatHTG(item.startingPrice != null ? item.startingPrice : item.price)}</span>
+       </div>`
     : isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
     : `<div class="price-row">
          <span class="price">${priceDualInline(item.price)}</span>
-         ${item.oldPrice ? `<span class="price-old">$${item.oldPrice.toFixed(2)}</span>` : ''}
+         ${item.oldPrice ? `<span class="price-old">${formatHTG(item.oldPrice)}</span>` : ''}
        </div>`;
   return `
     <div class="card">
       <a class="thumb" href="${itemUrlPath(item)}" aria-label="Voir la page de ${name}">
-        ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
+        ${item.specialPercent != null ? `<span class="promo-flag">Spécial -${item.specialPercent}%</span>` : (item.promo ? '<span class="promo-flag">Promo</span>' : '')}
         ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
         ${(item.imageUrls && item.imageUrls[0]) ? `<img src="${item.imageUrls[0]}" alt="${name}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
       </a>
@@ -887,7 +933,7 @@ function updateDimensionPrice(id){
   }
   const unit = computeSqftPrice(width, height, item.pricePerSqft || 0);
   const total = unit * qty;
-  priceEl.innerHTML = `<strong>${formatUSD(total)}</strong> <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(total)}</span>${qty>1 ? ` <span class="card-sub">(${formatUSD(unit)} / unité)</span>` : ''}`;
+  priceEl.innerHTML = `<strong>${formatHTG(total)}</strong> <span class="price-htg" style="display:inline; margin:0;">≈ ${formatUSD(total)}</span>${qty>1 ? ` <span class="card-sub">(${formatHTG(unit)} / unité)</span>` : ''}`;
   btn.disabled = false;
   btn.textContent = 'Ajouter au panier';
 }
@@ -966,14 +1012,16 @@ function renderItemDetail(id){
   const outOfStock = item.inStock === false;
   const images = (item.imageUrls && item.imageUrls.length) ? item.imageUrls : [];
   const priceBlock = item.isDimensionBased
-    ? `<div class="price-row"><span class="price">$${(item.pricePerSqft||0).toFixed(2)} / pi²</span></div><p class="card-sub" style="margin-top:-6px;">Indiquez les dimensions ci-dessous</p>`
+    ? `<div class="price-row"><span class="price">${formatHTG(item.pricePerSqft||0)} / pi²</span></div><p class="card-sub" style="margin-top:-6px;">Indiquez les dimensions ci-dessous</p>`
+    : item.specialPercent != null
+    ? `<div class="price-row"><span class="price">${priceDualInline(item.specialPrice)}</span><span class="price-old">${formatHTG(item.startingPrice != null ? item.startingPrice : item.price)}</span></div>`
     : isEstimate(item)
     ? `<div class="price-row"><span class="price">À partir de ${priceDualInline(item.startingPrice)}</span></div>`
-    : `<div class="price-row"><span class="price">${priceDualInline(item.price)}</span>${item.oldPrice ? `<span class="price-old">$${item.oldPrice.toFixed(2)}</span>` : ''}</div>`;
+    : `<div class="price-row"><span class="price">${priceDualInline(item.price)}</span>${item.oldPrice ? `<span class="price-old">${formatHTG(item.oldPrice)}</span>` : ''}</div>`;
 
   const galleryHTML = images.length ? `
     <div class="item-detail-thumb">
-      ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
+      ${item.specialPercent != null ? `<span class="promo-flag">Spécial -${item.specialPercent}%</span>` : (item.promo ? '<span class="promo-flag">Promo</span>' : '')}
       ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
       <img id="galleryMainImg" src="${images[0]}" alt="${name}">
     </div>
@@ -983,7 +1031,7 @@ function renderItemDetail(id){
       </div>` : ''}
   ` : `
     <div class="item-detail-thumb">
-      ${item.promo ? '<span class="promo-flag">Promo</span>' : ''}
+      ${item.specialPercent != null ? `<span class="promo-flag">Spécial -${item.specialPercent}%</span>` : (item.promo ? '<span class="promo-flag">Promo</span>' : '')}
       ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
       <div class="no-image">Pas de photo</div>
     </div>`;
@@ -1033,7 +1081,7 @@ function renderItemDetail(id){
     ${priceBlock}
     ${item.isDimensionBased ? `
     <div class="form-field"><label>Format</label>
-      <div class="dim-format-badge">Pied carré — $${(item.pricePerSqft||0).toFixed(2)}/pi²</div>
+      <div class="dim-format-badge">Pied carré — ${formatHTG(item.pricePerSqft||0)}/pi²</div>
     </div>
     <div class="form-field"><label>Dimensions (en pouces)</label>
       <div class="dim-inputs">
@@ -1108,7 +1156,7 @@ function injectItemStructuredData(item, description, ratingSummary){
     if(!item.isDimensionBased){
       data.offers = {
         "@type": "Offer",
-        "priceCurrency": "USD",
+        "priceCurrency": "HTG",
         "price": price,
         "availability": item.inStock === false ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
         "url": url
@@ -1122,13 +1170,13 @@ function injectItemStructuredData(item, description, ratingSummary){
       "priceSpecification": {
         "@type": "UnitPriceSpecification",
         "price": item.pricePerSqft,
-        "priceCurrency": "USD",
+        "priceCurrency": "HTG",
         "unitText": "pi²"
       },
       "url": url
     };
   } else if(price != null){
-    data.offers = { "@type": "Offer", "priceCurrency": "USD", "price": price, "url": url };
+    data.offers = { "@type": "Offer", "priceCurrency": "HTG", "price": price, "url": url };
   }
 
   const script = document.createElement('script');
@@ -1190,8 +1238,6 @@ async function submitTrackOrder(){
   }
 }
 function renderTrackResult(o){
-  const rate = o.exchange_rate || SETTINGS.exchangeRate;
-  const htg = new Intl.NumberFormat('fr-FR').format(Math.round((o.total||0) * rate));
   const items = (o.items||[]).map(i => `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('');
   const history = (o.history||[]).map(h => `<li>${escapeHtml(h.status)} — ${new Date(h.changed_at).toLocaleString('fr-FR')}</li>`).join('');
   document.getElementById('trackResult').innerHTML = `
@@ -1202,7 +1248,7 @@ function renderTrackResult(o){
       </div>
       <div class="item-code-tag" style="margin:6px 0; display:inline-block;">${escapeHtml(o.status)}</div>
       <ul class="admin-list">${items}</ul>
-      <div class="cart-total-row"><span>Total</span><span class="amt">$${Number(o.total||0).toFixed(2)}<span class="price-htg">≈ ${htg} HTG</span></span></div>
+      <div class="cart-total-row"><span>Total</span><span class="amt">${priceDualInline(Number(o.total||0))}</span></div>
       <div class="card-sub">Paiement : ${escapeHtml(o.payment) || '—'} · ${escapeHtml(o.delivery) || '—'}</div>
       <h3 style="margin-bottom:6px;">Progression</h3>
       <ul class="admin-list">${history}</ul>
@@ -1287,7 +1333,7 @@ function renderCart(){
       <div>
         <div class="ci-name">${escapeHtml(item.name)}</div>
         ${item.dimensionsLabel ? `<div class="card-sub" style="margin:2px 0;">${escapeHtml(item.dimensionsLabel)}</div>` : ''}
-        <div class="ci-price">${item.qty} × ${isEstimate(item) ? 'à partir de ' : ''}${formatUSD(unitPrice(item))} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(unitPrice(item))}</span></div>
+        <div class="ci-price">${item.qty} × ${isEstimate(item) ? 'à partir de ' : ''}${formatHTG(unitPrice(item))} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatUSD(unitPrice(item))}</span></div>
       </div>
       <div class="ci-controls">
         <div class="qty-row-sm">
@@ -1302,11 +1348,11 @@ function renderCart(){
   footerEl.innerHTML = `
     <div class="cart-total-row">
       <span>Total estimé</span>
-      <span class="amt">${formatUSD(cartTotal())}<span class="price-htg" style="text-align:right;">≈ ${formatHTG(cartTotal())}</span></span>
+      <span class="amt">${formatHTG(cartTotal())}<span class="price-htg" style="text-align:right;">≈ ${formatUSD(cartTotal())}</span></span>
     </div>
     ${hasEstimateItems ? '<div class="cart-quote-note">* Prix de certains services estimés « à partir de » — montant final confirmé sur WhatsApp.</div>' : ''}
     <div class="cart-actions">
-      <button class="btn btn-wa btn-block" onclick="startOrderFlow()">Commander via WhatsApp</button>
+      <button class="btn btn-wa btn-block" onclick="startOrderFlow()">Commander</button>
       <button class="btn btn-ghost btn-block" onclick="confirmClearCart()">Vider le panier</button>
     </div>
   `;
@@ -1489,7 +1535,7 @@ function buildWhatsappRecapMessage(summary){
   (summary.items||[]).forEach(i => {
     msg += `▪ ${i.name}${i.code ? ` (${i.code})` : ''} × ${i.qty}%0A`;
   });
-  msg += `%0A${SEP}*Total payé : ${formatUSD(summary.total)}*%0ALivraison : ${summary.delivery}`;
+  msg += `%0A${SEP}*Total payé : ${formatHTG(summary.total)}* (≈ ${formatUSD(summary.total)})%0ALivraison : ${summary.delivery}`;
   msg += `%0A%0A${SEP}Merci pour votre confiance ! Ceci est une confirmation — aucune action supplémentaire n'est requise de votre part.`;
   return msg;
 }
@@ -1703,7 +1749,7 @@ function showStepDelivery(){
   const nextAction = pureProduct
     ? "orderFlow.delivery ? showStepPayment() : null"
     : "orderFlow.delivery ? handleSendOrderClick() : null";
-  const nextLabel = pureProduct ? "Suivant" : "Envoyer";
+  const nextLabel = pureProduct ? "Suivant" : "Finaliser sur WhatsApp";
   openStep(`
     <h3>Souhaitez-vous être livré ou récupérer sur place ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.delivery===o?'selected':''}" onclick="selectDelivery('${o}')">${o}</button>`).join('')}
@@ -1733,7 +1779,9 @@ async function handleRealPayment(){
     }
 
     const paymentRef = `${orderCode}-${Date.now()}`;
-    const amountHTG = Math.max(20, Math.round(total * SETTINGS.exchangeRate));
+    // Le total est déjà en gourdes (monnaie de référence du site) —
+    // aucune conversion supplémentaire n'est nécessaire ici.
+    const amountHTG = Math.max(20, Math.round(total));
 
     // On enregistre la référence de cette tentative de paiement pour
     // que le webhook puisse retrouver et confirmer le bon paiement.
@@ -1918,12 +1966,12 @@ async function sendOrder(){
     const codeTag = i.code ? ` (${i.code})` : "";
     const dimTag = i.dimensionsLabel ? ` — ${i.dimensionsLabel}` : "";
     const lineTotal = unitPrice(i) * i.qty;
-    const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatUSD(lineTotal)} (≈ ${formatHTG(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
+    const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatHTG(lineTotal)} (≈ ${formatUSD(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
     msg += `▪ ${i.name}${codeTag} × ${i.qty}${tag}${dimTag}%0A   ${amount}%0A`;
   });
   msg += `%0A${SEP}`;
 
-  msg += `*Total estimé : ${formatUSD(total)}* (≈ ${formatHTG(total)})%0A`;
+  msg += `*Total estimé : ${formatHTG(total)}* (≈ ${formatUSD(total)})%0A`;
   msg += `Paiement : ${orderFlow.payment}%0A`;
   msg += `Livraison : ${orderFlow.delivery}`;
 
@@ -2053,7 +2101,7 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','banner','portfolio','reviews','orders','files','customers','settings'].forEach(t=>{
+  ['dashboard','catalog','content','banner','portfolio','reviews','promos','orders','files','customers','settings'].forEach(t=>{
     document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
@@ -2063,6 +2111,7 @@ function showAdminTab(name){
   if(name==='banner') renderAdminBanner();
   if(name==='portfolio') renderAdminPortfolio();
   if(name==='reviews') renderAdminReviews();
+  if(name==='promos') renderAdminPromos();
   if(name==='orders') renderAdminOrders();
   if(name==='files') renderAdminFiles();
   if(name==='customers') renderAdminCustomers();
@@ -2545,7 +2594,7 @@ async function renderAdminCustomers(){
             <span class="mono">${c.order_count} commande${c.order_count>1?'s':''}</span>
           </div>
           <div class="card-sub">${escapeHtml(c.phone)}${c.latest_address ? ' · ' + escapeHtml(c.latest_address) : ''}</div>
-          <div class="cart-total-row"><span>Total dépensé</span><span class="amt">$${Number(c.total_spent||0).toFixed(2)}</span></div>
+          <div class="cart-total-row"><span>Total dépensé</span><span class="amt">${formatHTG(Number(c.total_spent||0))}</span></div>
           <div class="card-sub">Première commande : ${new Date(c.first_order_at).toLocaleDateString('fr-FR')} · Dernière : ${new Date(c.last_order_at).toLocaleDateString('fr-FR')}</div>
         </div>
       `).join('')}
@@ -2796,7 +2845,7 @@ function renderDashboardContent(){
     </div>
     <div class="admin-stat-grid">
       <div class="admin-stat-card"><div class="stat-num">${totalOrders}</div><div class="stat-label">Commandes</div></div>
-      <div class="admin-stat-card"><div class="stat-num">$${totalRevenue.toFixed(2)}</div><div class="stat-label">Total estimé</div></div>
+      <div class="admin-stat-card"><div class="stat-num">${formatHTG(totalRevenue)}</div><div class="stat-label">Total estimé</div></div>
       <div class="admin-stat-card"><div class="stat-num">${CATALOG.products.length + CATALOG.services.length}</div><div class="stat-label">Articles au catalogue</div></div>
     </div>
     <h3>Articles les plus commandés</h3>
@@ -2855,8 +2904,8 @@ function adminItemRowHTML(kind, item, idx, total){
   const isService = kind === 'services';
   const rawPrice = isService ? (item.startingPrice ?? null) : (item.price ?? 0);
   const priceLabel = item.isDimensionBased
-    ? `$${(item.pricePerSqft||0).toFixed(2)}/pi² <span class="price-htg" style="display:inline; margin:0;">au pied carré</span>`
-    : (rawPrice != null ? `$${rawPrice.toFixed(2)} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatHTG(rawPrice)}</span>` : '—');
+    ? `${formatHTG(item.pricePerSqft||0)}/pi² <span class="price-htg" style="display:inline; margin:0;">au pied carré</span>`
+    : (rawPrice != null ? `${formatHTG(rawPrice)} <span class="price-htg" style="display:inline; margin:0;">≈ ${formatUSD(rawPrice)}</span>` : '—');
   return `
   <div class="admin-item-row" id="adminrow-${item.id}">
     <div class="admin-item-summary" onclick="toggleAdminEdit('${item.id}')">
@@ -2888,15 +2937,23 @@ function adminItemRowHTML(kind, item, idx, total){
           Calcul au pied carré (le client indique largeur × longueur en pouces, prix calculé automatiquement)
         </label>
       </div>
+      <div class="form-field">
+        <label>Devise de saisie du prix</label>
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="opt-btn" id="unitbtn-usd-${item.id}" onclick="setPriceUnit('${item.id}','USD')">$ Dollars</button>
+          <button type="button" class="opt-btn selected" id="unitbtn-htg-${item.id}" onclick="setPriceUnit('${item.id}','HTG')">Gourdes (HTG)</button>
+        </div>
+        <input type="hidden" id="f-priceunit-${item.id}" value="HTG">
+      </div>
       <div id="f-dimprice-wrap-${item.id}" style="display:${item.isDimensionBased?'block':'none'};">
-        <div class="form-field"><label>Prix par pied carré ($/pi²)</label><input type="number" step="0.01" min="0" id="f-pricesqft-${item.id}" value="${item.pricePerSqft ?? 0}"></div>
+        <div class="form-field"><label id="f-pricesqft-label-${item.id}">Prix par pied carré (HTG/pi²)</label><input type="number" step="0.01" min="0" id="f-pricesqft-${item.id}" value="${item.pricePerSqft ?? 0}"></div>
       </div>
       <div id="f-normalprice-wrap-${item.id}" style="display:${item.isDimensionBased?'none':'block'};">
       ${isService ? `
-        <div class="form-field"><label>Prix de départ ($)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.startingPrice ?? 0}"></div>
+        <div class="form-field"><label id="f-price-label-${item.id}">Prix de départ (HTG)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.startingPrice ?? 0}"></div>
       ` : `
-        <div class="form-field"><label>Prix ($)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.price ?? 0}"></div>
-        <div class="form-field"><label>Ancien prix ($) — laisser vide si pas de promo</label><input type="number" step="0.01" min="0" id="f-oldprice-${item.id}" value="${item.oldPrice ?? ''}"></div>
+        <div class="form-field"><label id="f-price-label-${item.id}">Prix (HTG)</label><input type="number" step="0.01" min="0" id="f-price-${item.id}" value="${item.price ?? 0}"></div>
+        <div class="form-field"><label id="f-oldprice-label-${item.id}">Ancien prix (HTG) — laisser vide si pas de promo</label><input type="number" step="0.01" min="0" id="f-oldprice-${item.id}" value="${item.oldPrice ?? ''}"></div>
       `}
       </div>
       ${!isService ? `
@@ -2918,6 +2975,41 @@ function adminItemRowHTML(kind, item, idx, total){
       </div>
     </div>
   </div>`;
+}
+function setPriceUnit(id, unit){
+  const hidden = document.getElementById('f-priceunit-'+id);
+  if(!hidden || hidden.value === unit) return;
+  const previousUnit = hidden.value;
+  hidden.value = unit;
+  const usdBtn = document.getElementById('unitbtn-usd-'+id);
+  const htgBtn = document.getElementById('unitbtn-htg-'+id);
+  if(usdBtn) usdBtn.classList.toggle('selected', unit === 'USD');
+  if(htgBtn) htgBtn.classList.toggle('selected', unit === 'HTG');
+
+  const rate = SETTINGS.exchangeRate || 1;
+  ['f-price-'+id, 'f-oldprice-'+id, 'f-pricesqft-'+id].forEach(fieldId => {
+    const el = document.getElementById(fieldId);
+    if(!el || el.value === '') return;
+    const v = parseFloat(el.value);
+    if(isNaN(v)) return;
+    // Convertit la valeur actuellement affichée (dans l'ancienne devise)
+    // vers la nouvelle devise choisie — jamais la valeur stockée en base,
+    // qui reste toujours en gourdes tant que "Enregistrer" n'a pas été cliqué.
+    if(previousUnit === 'USD' && unit === 'HTG'){
+      el.value = Math.round(v * rate);
+    } else if(previousUnit === 'HTG' && unit === 'USD'){
+      el.value = Math.round((v / rate) * 100) / 100;
+    }
+  });
+
+  const unitLabel = unit === 'HTG' ? 'HTG' : '$';
+  const perSqftLabel = unit === 'HTG' ? 'HTG/pi²' : '$/pi²';
+  const priceLabelEl = document.getElementById('f-price-label-'+id);
+  if(priceLabelEl) priceLabelEl.textContent = priceLabelEl.textContent.replace(/\(\$|\(HTG/, '(' + unitLabel);
+  const oldPriceLabelEl = document.getElementById('f-oldprice-label-'+id);
+  if(oldPriceLabelEl) oldPriceLabelEl.textContent = oldPriceLabelEl.textContent.replace(/\(\$|\(HTG/, '(' + unitLabel);
+  const sqftLabelEl = document.getElementById('f-pricesqft-label-'+id);
+  if(sqftLabelEl) sqftLabelEl.textContent = sqftLabelEl.textContent.replace(/\$\/pi²|HTG\/pi²/, perSqftLabel);
 }
 function toggleDimensionPricing(id){
   const checked = document.getElementById('f-dimbased-'+id).checked;
@@ -2971,14 +3063,21 @@ async function adminSaveItem(kind, id){
     item.slug = candidate;
   }
   const desc = document.getElementById('f-desc-'+id).value.trim();
+  const priceUnitEl = document.getElementById('f-priceunit-'+id);
+  const priceUnit = priceUnitEl ? priceUnitEl.value : 'HTG';
+  // Les prix sont désormais stockés en gourdes (HTG), la monnaie de
+  // référence du site. Si l'admin a saisi en dollars, on convertit
+  // vers les gourdes avant l'enregistrement ; sinon, la valeur tapée
+  // est déjà la bonne, aucune conversion nécessaire.
+  const toHTG = (v) => priceUnit === 'USD' ? Math.round(v * (SETTINGS.exchangeRate || 1) * 100) / 100 : v;
   if(kind === 'services'){
     item.description = desc;
-    item.startingPrice = parseFloat(document.getElementById('f-price-'+id).value) || 0;
+    item.startingPrice = toHTG(parseFloat(document.getElementById('f-price-'+id).value) || 0);
   } else {
     item.utility = desc;
-    item.price = parseFloat(document.getElementById('f-price-'+id).value) || 0;
+    item.price = toHTG(parseFloat(document.getElementById('f-price-'+id).value) || 0);
     const oldP = document.getElementById('f-oldprice-'+id).value;
-    item.oldPrice = oldP ? parseFloat(oldP) : undefined;
+    item.oldPrice = oldP ? toHTG(parseFloat(oldP)) : undefined;
     item.promo = !!oldP;
     item.inStock = document.getElementById('f-instock-'+id).checked;
     item.customizable = document.getElementById('f-custom-'+id).checked;
@@ -2986,7 +3085,7 @@ async function adminSaveItem(kind, id){
   item.seoTitle = document.getElementById('f-seotitle-'+id).value.trim();
   item.seoDescription = document.getElementById('f-seodesc-'+id).value.trim();
   item.isDimensionBased = document.getElementById('f-dimbased-'+id).checked;
-  item.pricePerSqft = parseFloat(document.getElementById('f-pricesqft-'+id).value) || 0;
+  item.pricePerSqft = toHTG(parseFloat(document.getElementById('f-pricesqft-'+id).value) || 0);
 
   const imageUrls = item.imageUrls ? [...item.imageUrls] : [];
   const filesToUpload = [];
@@ -3104,6 +3203,145 @@ async function getOrdersForAdmin(){
   }
   return loadOrdersLocal();
 }
+/* =========================================================
+   CODES PROMO — remise automatique en % sur une sélection de
+   produits/services. S'affiche sur le site sous forme de badge
+   "Spécial" avec ancien prix barré, sans que le client n'ait à
+   saisir de code : la sélection se fait entièrement dans l'admin.
+   ========================================================= */
+let ADMIN_PROMOS = [];
+async function renderAdminPromos(){
+  const el = document.getElementById('adminTab-promos');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ Les codes promo nécessitent que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data: codes, error } = await db.from('promo_codes').select('*').order('created_at', { ascending:false });
+    if(error) throw error;
+    const { data: links } = await db.from('promo_code_items').select('promo_code_id, catalog_item_id');
+    ADMIN_PROMOS = (codes||[]).map(c => ({
+      ...c,
+      itemIds: (links||[]).filter(l => l.promo_code_id === c.id).map(l => l.catalog_item_id)
+    }));
+    renderAdminPromosList();
+  }catch(e){
+    el.innerHTML = `<p class="card-sub">Erreur de chargement des codes promo.</p>`;
+    console.error(e);
+  }
+}
+function renderAdminPromosList(){
+  const el = document.getElementById('adminTab-promos');
+  el.innerHTML = `
+    <h3>Codes promo</h3>
+    <div class="admin-note">Créez un code, indiquez le pourcentage de réduction, puis cochez les produits et services concernés. La remise s'applique automatiquement sur le site — le client n'a rien à saisir.</div>
+    <button class="btn btn-primary" style="margin:10px 0;" onclick="adminAddPromo()">+ Nouveau code promo</button>
+    <div id="adminPromosList"></div>
+  `;
+  const listEl = document.getElementById('adminPromosList');
+  listEl.innerHTML = ADMIN_PROMOS.map(p => adminPromoRowHTML(p)).join('') || '<p class="card-sub">Aucun code promo pour le moment.</p>';
+}
+function adminPromoRowHTML(p){
+  const itemCount = p.itemIds.length;
+  return `
+    <div class="admin-item-card">
+      <div class="admin-item-summary" onclick="toggleAdminPromoEdit(${p.id})">
+        <span>${escapeHtml(p.name || '(sans nom)')} <span class="item-code-tag">${escapeHtml(p.code)}</span></span>
+        <span class="admin-item-price">-${p.discount_percent}% ${p.active ? '' : '<span class="stock-flag" style="position:static;">Inactif</span>'}</span>
+      </div>
+      <div id="promo-edit-${p.id}" style="display:none; padding:14px; border-top:1px solid var(--line);">
+        <div class="form-field"><label>Nom (repère interne)</label><input type="text" id="f-promoname-${p.id}" value="${escapeHtml(p.name||'').replace(/"/g,'&quot;')}" placeholder="Ex : Soldes de rentrée"></div>
+        <div class="form-field"><label>Code</label><input type="text" id="f-promocode-${p.id}" value="${escapeHtml(p.code||'').replace(/"/g,'&quot;')}" placeholder="Ex : RENTREE20" style="text-transform:uppercase;"></div>
+        <div class="form-field"><label>Pourcentage de réduction (%)</label><input type="number" id="f-promopercent-${p.id}" min="1" max="100" step="1" value="${p.discount_percent}"></div>
+        <label class="check-row"><input type="checkbox" id="f-promoactive-${p.id}" ${p.active ? 'checked' : ''}> Actif (remise appliquée sur le site)</label>
+        <h4 style="margin:16px 0 6px;">Produits et services concernés (${itemCount} sélectionné${itemCount>1?'s':''})</h4>
+        <div style="max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:10px; padding:10px;">
+          <div class="admin-note" style="margin-bottom:6px;">Produits</div>
+          ${CATALOG.products.map(i => `<label class="check-row"><input type="checkbox" class="promo-item-cb" data-promo="${p.id}" value="${i.id}" ${p.itemIds.includes(i.id)?'checked':''}> ${escapeHtml(i.name)}</label>`).join('') || '<p class="card-sub">Aucun produit.</p>'}
+          <div class="admin-note" style="margin:10px 0 6px;">Services</div>
+          ${CATALOG.services.map(i => `<label class="check-row"><input type="checkbox" class="promo-item-cb" data-promo="${p.id}" value="${i.id}" ${p.itemIds.includes(i.id)?'checked':''}> ${escapeHtml(i.name)}</label>`).join('') || '<p class="card-sub">Aucun service.</p>'}
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="adminDeletePromo(${p.id})">Supprimer</button>
+          <button class="btn btn-primary" id="save-promo-${p.id}" onclick="adminSavePromo(${p.id})">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function toggleAdminPromoEdit(id){
+  const el = document.getElementById('promo-edit-'+id);
+  if(el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function adminAddPromo(){
+  const newId = 'new-' + Date.now();
+  ADMIN_PROMOS.unshift({ id: newId, name:'', code:'', discount_percent:10, active:true, itemIds:[], _isNew:true });
+  renderAdminPromosList();
+  toggleAdminPromoEdit(newId);
+}
+async function adminSavePromo(id){
+  const promo = ADMIN_PROMOS.find(p => p.id === id);
+  if(!promo) return;
+  const btn = document.getElementById('save-promo-'+id);
+  if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+  try{
+    const name = document.getElementById('f-promoname-'+id).value.trim();
+    const code = document.getElementById('f-promocode-'+id).value.trim().toUpperCase();
+    const percent = parseFloat(document.getElementById('f-promopercent-'+id).value) || 0;
+    const active = document.getElementById('f-promoactive-'+id).checked;
+    const selectedIds = Array.from(document.querySelectorAll(`.promo-item-cb[data-promo="${id}"]:checked`)).map(cb => cb.value);
+
+    if(!name || !code){ showToast("Le nom et le code sont obligatoires"); if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } return; }
+    if(percent <= 0 || percent > 100){ showToast("Le pourcentage doit être entre 1 et 100"); if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } return; }
+
+    let realId = (typeof id === 'string' && id.startsWith('new-')) ? null : id;
+
+    if(realId == null){
+      const { data, error } = await db.from('promo_codes').insert({ name, code, discount_percent: percent, active }).select('id').single();
+      if(error) throw error;
+      realId = data.id;
+    } else {
+      const { error } = await db.from('promo_codes').update({ name, code, discount_percent: percent, active }).eq('id', realId);
+      if(error) throw error;
+      await db.from('promo_code_items').delete().eq('promo_code_id', realId);
+    }
+
+    if(selectedIds.length){
+      const rows = selectedIds.map(itemId => ({ promo_code_id: realId, catalog_item_id: itemId }));
+      const { error: linkError } = await db.from('promo_code_items').insert(rows);
+      if(linkError) throw linkError;
+    }
+
+    showToast("Code promo enregistré");
+    await refreshPromos();
+    await renderAdminPromos();
+  }catch(e){
+    showToast("Échec de l'enregistrement — le code est peut-être déjà utilisé");
+    console.error(e);
+    if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  }
+}
+async function adminDeletePromo(id){
+  if(typeof id === 'string' && id.startsWith('new-')){
+    ADMIN_PROMOS = ADMIN_PROMOS.filter(p => p.id !== id);
+    renderAdminPromosList();
+    return;
+  }
+  showConfirmModal("Supprimer ce code promo ? La remise cessera immédiatement de s'appliquer.", async () => {
+    try{
+      const { error } = await db.from('promo_codes').delete().eq('id', id);
+      if(error) throw error;
+      showToast("Code promo supprimé");
+      await refreshPromos();
+      await renderAdminPromos();
+    }catch(e){
+      showToast("Échec de la suppression");
+      console.error(e);
+    }
+  });
+}
+
 async function renderAdminOrders(){
   const el = document.getElementById('adminTab-orders');
   el.innerHTML = `<p class="card-sub">Chargement…</p>`;
@@ -3127,8 +3365,6 @@ const ORDER_STATUSES = [
 ];
 const PAYMENT_STATUSES = ['En attente','Confirmé','Refusé','Remboursé'];
 function orderRowHTML(o){
-  const rate = o.exchangeRate || SETTINGS.exchangeRate;
-  const htg = new Intl.NumberFormat('fr-FR').format(Math.round((o.total||0) * rate));
   const statusSelect = (o.id && SUPABASE_ENABLED)
     ? `<select class="order-status-select" onchange="adminUpdateOrderStatus(${o.id}, this.value)">
         ${ORDER_STATUSES.map(s => `<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
@@ -3147,7 +3383,7 @@ function orderRowHTML(o){
     ${o.code ? `<div class="item-code-tag" style="margin:4px 0;">${escapeHtml(o.code)}</div>` : ''}
     <div class="card-sub">${escapeHtml(o.customerPhone)}${o.customerAddress ? ' · ' + escapeHtml(o.customerAddress) : ''}</div>
     <ul class="admin-list">${(o.items||[]).map(i => `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('')}</ul>
-    <div class="cart-total-row"><span>Total</span><span class="amt">$${(o.total||0).toFixed(2)}<span class="price-htg">≈ ${htg} HTG</span></span></div>
+    <div class="cart-total-row"><span>Total</span><span class="amt">${priceDualInline(o.total||0)}</span></div>
     <div class="card-sub">Livraison : ${escapeHtml(o.delivery) || '—'}</div>
     ${o.details ? `<div class="admin-note" style="margin-top:8px;"><strong>Détails demandés par le client :</strong><br>${escapeHtml(o.details).replace(/\n/g,'<br>')}</div>` : ''}
     ${o.uploadCount > 0 ? `
