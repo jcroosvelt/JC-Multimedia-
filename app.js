@@ -2817,7 +2817,11 @@ function renderDashboardContent(){
   const el = document.getElementById('adminTab-dashboard');
   const orders = getFilteredDashboardOrders();
   const totalOrders = orders.length;
-  const totalRevenue = orders.reduce((s,o)=> s + (o.total||0), 0);
+  // Seules les commandes au paiement confirmé comptent comme revenu
+  // réel — une commande passée n'est pas de l'argent encaissé tant
+  // que son paiement n'a pas été validé (webhook ou admin).
+  const confirmedOrders = orders.filter(o => o.paymentRecord && o.paymentRecord.status === 'Confirmé');
+  const totalRevenue = confirmedOrders.reduce((s,o)=> s + (o.total||0), 0);
   const itemCounts = {};
   orders.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + i.qty; }));
   const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
@@ -2845,7 +2849,7 @@ function renderDashboardContent(){
     </div>
     <div class="admin-stat-grid">
       <div class="admin-stat-card"><div class="stat-num">${totalOrders}</div><div class="stat-label">Commandes</div></div>
-      <div class="admin-stat-card"><div class="stat-num">${formatHTG(totalRevenue)}</div><div class="stat-label">Total estimé</div></div>
+      <div class="admin-stat-card"><div class="stat-num">${formatHTG(totalRevenue)}</div><div class="stat-label">Encaissé (paiements confirmés)</div></div>
       <div class="admin-stat-card"><div class="stat-num">${CATALOG.products.length + CATALOG.services.length}</div><div class="stat-label">Articles au catalogue</div></div>
     </div>
     <h3>Articles les plus commandés</h3>
@@ -3246,7 +3250,7 @@ function adminPromoRowHTML(p){
   const itemCount = p.itemIds.length;
   return `
     <div class="admin-item-card">
-      <div class="admin-item-summary" onclick="toggleAdminPromoEdit(${p.id})">
+      <div class="admin-item-summary" onclick="toggleAdminPromoEdit('${p.id}')">
         <span>${escapeHtml(p.name || '(sans nom)')} <span class="item-code-tag">${escapeHtml(p.code)}</span></span>
         <span class="admin-item-price">-${p.discount_percent}% ${p.active ? '' : '<span class="stock-flag" style="position:static;">Inactif</span>'}</span>
       </div>
@@ -3263,8 +3267,8 @@ function adminPromoRowHTML(p){
           ${CATALOG.services.map(i => `<label class="check-row"><input type="checkbox" class="promo-item-cb" data-promo="${p.id}" value="${i.id}" ${p.itemIds.includes(i.id)?'checked':''}> ${escapeHtml(i.name)}</label>`).join('') || '<p class="card-sub">Aucun service.</p>'}
         </div>
         <div class="modal-actions">
-          <button class="btn btn-ghost" onclick="adminDeletePromo(${p.id})">Supprimer</button>
-          <button class="btn btn-primary" id="save-promo-${p.id}" onclick="adminSavePromo(${p.id})">Enregistrer</button>
+          <button class="btn btn-ghost" onclick="adminDeletePromo('${p.id}')">Supprimer</button>
+          <button class="btn btn-primary" id="save-promo-${p.id}" onclick="adminSavePromo('${p.id}')">Enregistrer</button>
         </div>
       </div>
     </div>
@@ -3281,7 +3285,7 @@ function adminAddPromo(){
   toggleAdminPromoEdit(newId);
 }
 async function adminSavePromo(id){
-  const promo = ADMIN_PROMOS.find(p => p.id === id);
+  const promo = ADMIN_PROMOS.find(p => String(p.id) === String(id));
   if(!promo) return;
   const btn = document.getElementById('save-promo-'+id);
   if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
@@ -3295,7 +3299,7 @@ async function adminSavePromo(id){
     if(!name || !code){ showToast("Le nom et le code sont obligatoires"); if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } return; }
     if(percent <= 0 || percent > 100){ showToast("Le pourcentage doit être entre 1 et 100"); if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } return; }
 
-    let realId = (typeof id === 'string' && id.startsWith('new-')) ? null : id;
+    let realId = (typeof id === 'string' && id.startsWith('new-')) ? null : Number(id);
 
     if(realId == null){
       const { data, error } = await db.from('promo_codes').insert({ name, code, discount_percent: percent, active }).select('id').single();
@@ -3324,7 +3328,7 @@ async function adminSavePromo(id){
 }
 async function adminDeletePromo(id){
   if(typeof id === 'string' && id.startsWith('new-')){
-    ADMIN_PROMOS = ADMIN_PROMOS.filter(p => p.id !== id);
+    ADMIN_PROMOS = ADMIN_PROMOS.filter(p => String(p.id) !== String(id));
     renderAdminPromosList();
     return;
   }
