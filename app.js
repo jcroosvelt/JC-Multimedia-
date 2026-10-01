@@ -595,6 +595,18 @@ function extractStoragePath(url, bucket){
   return decodeURIComponent(url.slice(idx + marker.length).split('?')[0]);
 }
 
+// Mélange aléatoire (Fisher-Yates) — utilisé pour varier l'ordre des
+// aperçus produits/services sur l'accueil à chaque affichage, sans
+// jamais modifier le tableau d'origine (CATALOG reste intact pour les
+// autres pages et pour l'admin).
+function shuffleArray(arr){
+  const copy = [...arr];
+  for(let i = copy.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
 function escapeHtml(s){
   return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -876,20 +888,36 @@ function renderGrid(){
       : `<p class="card-sub">${CATALOG.services.length === 0 ? "Nos services seront bientôt détaillés ici — revenez vite !" : "Aucun service ne correspond à votre recherche."}</p>`;
   }
 
+  const promoPageGrid = document.getElementById('promoPageGrid');
+  if(promoPageGrid){
+    const onPromo = [...CATALOG.products, ...CATALOG.services].filter(i => i.specialPercent != null);
+    promoPageGrid.innerHTML = onPromo.length
+      ? onPromo.map(cardHTML).join('')
+      : `<p class="card-sub">Aucune promotion en cours pour le moment — revenez bientôt !</p>`;
+  }
+
   // Aperçus sur l'accueil — 10 articles maximum, sans filtre de recherche.
-  // L'ordre suit celui défini dans l'admin (onglet Catalogue, flèches de
-  // réorganisation) — si l'admin change la position d'un article, l'accueil
-  // se met à jour automatiquement.
+  // L'ordre est mélangé aléatoirement à chaque affichage (deux visiteurs
+  // au même moment peuvent donc voir un agencement différent) — l'ordre
+  // défini dans l'admin ne s'applique qu'aux pages Boutique/Services
+  // elles-mêmes, jamais à cet aperçu. Les articles en promotion sont
+  // toujours inclus (jamais laissés de côté par le tirage aléatoire),
+  // pour qu'une promotion ne reste jamais invisible par hasard.
+  function pickHomePreview(list){
+    const onPromo = list.filter(i => i.specialPercent != null);
+    const rest = shuffleArray(list.filter(i => i.specialPercent == null));
+    return [...shuffleArray(onPromo), ...rest].slice(0, 10);
+  }
   const productGridHome = document.getElementById('productGridHome');
   if(productGridHome){
     productGridHome.innerHTML = CATALOG.products.length
-      ? CATALOG.products.slice(0,10).map(cardHTML).join('')
+      ? pickHomePreview(CATALOG.products).map(cardHTML).join('')
       : `<p class="card-sub">La boutique sera bientôt garnie — revenez vite !</p>`;
   }
   const serviceGridHome = document.getElementById('serviceGridHome');
   if(serviceGridHome){
     serviceGridHome.innerHTML = CATALOG.services.length
-      ? CATALOG.services.slice(0,10).map(cardHTML).join('')
+      ? pickHomePreview(CATALOG.services).map(cardHTML).join('')
       : `<p class="card-sub">Nos services seront bientôt détaillés ici — revenez vite !</p>`;
   }
 
