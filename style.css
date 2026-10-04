@@ -488,13 +488,22 @@ footer nav a:hover{color:var(--amber);}
 .form-field input:focus, .form-field select:focus{outline:2px solid var(--amber); outline-offset:1px;}
 .form-error{color:var(--coral); font-size:.82rem; margin:0 0 12px;}
 
-/* ---------- back to top ---------- */
-.back-to-top{
-  position:fixed; bottom:22px; right:18px; width:44px; height:44px; border-radius:50%;
-  background:var(--navy); color:#fff; border:none; font-size:1.1rem; cursor:pointer;
-  box-shadow:0 4px 14px rgba(11,33,88,.25); z-index:55; display:none;
+/* ---------- bouton flottant WhatsApp ---------- */
+.chat-fab{
+  position:fixed; bottom:22px; right:18px; width:52px; height:52px; border-radius:50%;
+  background:#25D366; color:#fff; border:none; cursor:pointer; text-decoration:none;
+  box-shadow:0 4px 14px rgba(11,33,88,.3); z-index:60;
+  display:flex; align-items:center; justify-content:center;
 }
-.back-to-top:hover{background:var(--navy-deep);}
+.chat-fab:hover{background:#1DA851;}
+
+/* ---------- réutilisé par l'admin pour afficher les anciens messages ---------- */
+.chat-messages{flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; min-height:180px;}
+.chat-msg{max-width:84%; padding:9px 12px; border-radius:12px; font-size:.88rem; line-height:1.4;}
+.chat-msg-visitor{align-self:flex-end; background:var(--navy); color:#fff; border-bottom-right-radius:3px;}
+.chat-msg-admin{align-self:flex-start; background:var(--surface2); color:var(--text); border-bottom-left-radius:3px;}
+.chat-msg-text{white-space:pre-wrap; word-break:break-word;}
+.chat-msg a{color:inherit; text-decoration:underline;}
 
 /* ---------- admin dashboard ---------- */
 .admin-note{

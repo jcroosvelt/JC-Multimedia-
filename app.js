@@ -1035,6 +1035,7 @@ function showToast(msg){
 function renderItemDetail(id){
   const item = ALL_ITEMS[id];
   if(!item) return;
+  logPageView('article', id);
   const name = escapeHtml(item.name);
   const subText = escapeHtml(item.utility || item.description || "");
   const outOfStock = item.inStock === false;
@@ -1646,6 +1647,138 @@ async function retryPayment(method){
   }
 }
 
+/* =========================================================
+   CHAT EN DIRECT — widget flottant permettant à un visiteur
+   d'écrire à JC Multimedia (texte ou fichier joint), avec réponse
+   depuis l'admin. L'identifiant de conversation (imprévisible) est
+   conservé sur l'appareil du visiteur pour retrouver l'historique
+   à sa prochaine visite — jamais de liste publique des conversations.
+   ========================================================= */
+const CHAT_CONV_KEY = "jc_multimedia_chat_conversation_id";
+const CHAT_SEEN_COUNT_KEY = "jc_multimedia_chat_seen_count";
+const CHAT_ALLOWED_TYPES = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
+const CHAT_MAX_FILE_SIZE = 5 * 1024 * 1024;
+let chatConversationId = safeGet(CHAT_CONV_KEY);
+let chatPollInterval = null;
+
+function toggleChatPanel(){
+  const panel = document.getElementById('chatPanel');
+  if(!panel) return;
+  const isOpen = panel.style.display === 'flex';
+  if(isOpen){
+    panel.style.display = 'none';
+    if(chatPollInterval){ clearInterval(chatPollInterval); chatPollInterval = null; }
+  } else {
+    panel.style.display = 'flex';
+    loadChatMessages();
+    if(chatPollInterval) clearInterval(chatPollInterval);
+    chatPollInterval = setInterval(loadChatMessages, 8000);
+  }
+}
+
+async function ensureChatConversation(){
+  if(chatConversationId) return chatConversationId;
+  if(!SUPABASE_ENABLED) return null;
+  try{
+    const { data, error } = await db.rpc('create_chat_conversation');
+    if(error) throw error;
+    chatConversationId = data;
+    safeSet(CHAT_CONV_KEY, chatConversationId);
+    return chatConversationId;
+  }catch(e){
+    console.warn('chat conversation creation failed:', e);
+    return null;
+  }
+}
+
+async function loadChatMessages(){
+  const messagesEl = document.getElementById('chatMessages');
+  if(!messagesEl) return;
+  if(!chatConversationId || !SUPABASE_ENABLED){
+    messagesEl.innerHTML = `<p class="card-sub">Envoyez-nous un message, nous vous répondrons dès que possible !</p>`;
+    return;
+  }
+  try{
+    const { data, error } = await db.rpc('get_chat_messages', { p_conversation_id: chatConversationId });
+    if(error) throw error;
+    const messages = data || [];
+    renderChatMessages(messages);
+    const panel = document.getElementById('chatPanel');
+    const isOpen = panel && panel.style.display === 'flex';
+    if(isOpen){
+      safeSet(CHAT_SEEN_COUNT_KEY, messages.length);
+      hideChatBadge();
+    } else {
+      const seen = safeGet(CHAT_SEEN_COUNT_KEY) || 0;
+      const hasNewAdminReply = messages.slice(seen).some(m => m.sender === 'admin');
+      if(hasNewAdminReply) showChatBadge();
+    }
+  }catch(e){
+    console.warn('loadChatMessages failed:', e);
+  }
+}
+
+function renderChatMessages(messages){
+  const el = document.getElementById('chatMessages');
+  if(!el) return;
+  el.innerHTML = messages.length ? messages.map(m => `
+    <div class="chat-msg chat-msg-${m.sender === 'admin' ? 'admin' : 'visitor'}">
+      ${m.body ? `<div class="chat-msg-text">${escapeHtml(m.body)}</div>` : ''}
+      ${m.file_url ? `<div class="chat-msg-text">📎 ${escapeHtml(m.file_name || 'Fichier envoyé')}</div>` : ''}
+    </div>
+  `).join('') : `<p class="card-sub">Envoyez-nous un message, nous vous répondrons dès que possible !</p>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChatMessage(){
+  const input = document.getElementById('chatTextInput');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  const convId = await ensureChatConversation();
+  if(!convId){ showToast("Impossible d'envoyer le message — réessayez."); return; }
+  try{
+    const { error } = await db.from('chat_messages').insert({ conversation_id: convId, sender: 'visitor', body: text });
+    if(error) throw error;
+    loadChatMessages();
+  }catch(e){
+    showToast("Échec de l'envoi — réessayez.");
+    console.error(e);
+  }
+}
+
+async function handleChatFileSelect(){
+  const fileInput = document.getElementById('chatFileInput');
+  const file = fileInput.files[0];
+  if(!file) return;
+  fileInput.value = '';
+  if(!CHAT_ALLOWED_TYPES.includes(file.type)){
+    showToast("Type de fichier non autorisé (images ou PDF uniquement)");
+    return;
+  }
+  if(file.size > CHAT_MAX_FILE_SIZE){
+    showToast("Fichier trop volumineux (5 Mo maximum)");
+    return;
+  }
+  const convId = await ensureChatConversation();
+  if(!convId){ showToast("Impossible d'envoyer le fichier — réessayez."); return; }
+  try{
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const safePath = `${convId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const { error: upErr } = await db.storage.from('chat-uploads').upload(safePath, file);
+    if(upErr) throw upErr;
+    const { error } = await db.from('chat_messages').insert({ conversation_id: convId, sender: 'visitor', file_url: safePath, file_name: file.name });
+    if(error) throw error;
+    loadChatMessages();
+  }catch(e){
+    showToast("Échec de l'envoi du fichier — réessayez.");
+    console.error(e);
+  }
+}
+
+function showChatBadge(){ const b = document.getElementById('chatFabBadge'); if(b) b.style.display = 'block'; }
+function hideChatBadge(){ const b = document.getElementById('chatFabBadge'); if(b) b.style.display = 'none'; }
+
 const MAX_UPLOAD_FILES = 3;
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5 Mo
 const ALLOWED_UPLOAD_TYPES = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
@@ -2047,13 +2180,6 @@ document.addEventListener('keydown', function(e){
 });
 
 /* =========================================================
-   BACK TO TOP
-   ========================================================= */
-window.addEventListener('scroll', function(){
-  document.getElementById('backToTop').style.display = window.scrollY > 600 ? 'flex' : 'none';
-}, { passive:true });
-
-/* =========================================================
    ORDERS LOG — journal local (repli hors-ligne uniquement ;
    quand Supabase est configuré, l'onglet admin "Commandes"
    lit directement Supabase pour voir TOUTES les commandes,
@@ -2129,7 +2255,7 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','banner','portfolio','reviews','promos','orders','files','customers','settings'].forEach(t=>{
+  ['dashboard','catalog','content','banner','portfolio','reviews','promos','chat','orders','files','customers','settings'].forEach(t=>{
     document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
@@ -2140,10 +2266,103 @@ function showAdminTab(name){
   if(name==='portfolio') renderAdminPortfolio();
   if(name==='reviews') renderAdminReviews();
   if(name==='promos') renderAdminPromos();
+  if(name==='chat') renderAdminChat();
   if(name==='orders') renderAdminOrders();
   if(name==='files') renderAdminFiles();
   if(name==='customers') renderAdminCustomers();
   if(name==='settings') renderAdminSettings();
+}
+/* ---- Messages du chat en direct ---- */
+let ADMIN_CHAT_CONVERSATIONS = [];
+async function renderAdminChat(){
+  const el = document.getElementById('adminTab-chat');
+  if(!SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ Le chat nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('chat_conversations').select('*').order('last_message_at', { ascending:false });
+    if(error) throw error;
+    ADMIN_CHAT_CONVERSATIONS = data || [];
+    renderAdminChatList();
+  }catch(e){
+    el.innerHTML = `<p class="card-sub">Erreur de chargement des messages.</p>`;
+    console.error(e);
+  }
+}
+function renderAdminChatList(){
+  const el = document.getElementById('adminTab-chat');
+  el.innerHTML = `
+    <h3>Messages des visiteurs</h3>
+    ${ADMIN_CHAT_CONVERSATIONS.length ? ADMIN_CHAT_CONVERSATIONS.map(c => `
+      <div class="admin-item-card">
+        <div class="admin-item-summary" onclick="openAdminChatThread('${c.id}')">
+          <span>${escapeHtml(c.visitor_name || 'Visiteur anonyme')}${c.admin_unread ? ' <span class="stock-flag" style="position:static; background:var(--coral);">Nouveau</span>' : ''}</span>
+          <span class="admin-item-price" style="font-weight:400; font-size:.78rem;">${new Date(c.last_message_at).toLocaleString('fr-FR')}</span>
+        </div>
+        <div id="chat-thread-${c.id}" style="display:none; padding:14px; border-top:1px solid var(--line);"></div>
+      </div>
+    `).join('') : '<p class="card-sub">Aucun message pour le moment.</p>'}
+  `;
+}
+async function openAdminChatThread(id){
+  const threadEl = document.getElementById('chat-thread-'+id);
+  if(!threadEl) return;
+  const isOpen = threadEl.style.display !== 'none';
+  if(isOpen){ threadEl.style.display = 'none'; return; }
+  threadEl.style.display = 'block';
+  const conv = ADMIN_CHAT_CONVERSATIONS.find(c => c.id === id);
+  if(conv && conv.admin_unread){
+    conv.admin_unread = false;
+    db.from('chat_conversations').update({ admin_unread:false }).eq('id', id).then(()=>{}, ()=>{});
+  }
+  await refreshAdminChatThread(id);
+}
+async function refreshAdminChatThread(id){
+  const threadEl = document.getElementById('chat-thread-'+id);
+  if(!threadEl) return;
+  threadEl.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data: messages, error } = await db.from('chat_messages').select('*').eq('conversation_id', id).order('created_at', { ascending:true });
+    if(error) throw error;
+    const withLinks = await Promise.all((messages||[]).map(async m => {
+      if(!m.file_url) return m;
+      try{
+        const { data: signed } = await db.storage.from('chat-uploads').createSignedUrl(m.file_url, 3600);
+        return { ...m, signedUrl: signed ? signed.signedUrl : null };
+      }catch(e){ return { ...m, signedUrl: null }; }
+    }));
+    threadEl.innerHTML = `
+      <div class="chat-messages" style="max-height:260px; min-height:auto;">
+        ${withLinks.map(m => `
+          <div class="chat-msg chat-msg-${m.sender}">
+            ${m.body ? `<div class="chat-msg-text">${escapeHtml(m.body)}</div>` : ''}
+            ${m.signedUrl ? `<div class="chat-msg-text"><a href="${m.signedUrl}" target="_blank" rel="noopener">📎 ${escapeHtml(m.file_name || 'Fichier')}</a></div>` : (m.file_url ? '<div class="chat-msg-text">📎 Fichier (lien expiré, rouvrez la conversation)</div>' : '')}
+          </div>
+        `).join('') || '<p class="card-sub">Aucun message.</p>'}
+      </div>
+      <div class="form-field" style="margin-top:10px;"><textarea id="chat-reply-${id}" rows="2" placeholder="Votre réponse…"></textarea></div>
+      <button class="btn btn-primary" onclick="sendAdminChatReply('${id}')">Envoyer</button>
+    `;
+  }catch(e){
+    threadEl.innerHTML = `<p class="card-sub">Erreur de chargement.</p>`;
+    console.error(e);
+  }
+}
+async function sendAdminChatReply(id){
+  const textarea = document.getElementById('chat-reply-'+id);
+  const text = textarea.value.trim();
+  if(!text) return;
+  try{
+    const { error } = await db.from('chat_messages').insert({ conversation_id:id, sender:'admin', body:text });
+    if(error) throw error;
+    await db.from('chat_conversations').update({ last_message_at: new Date().toISOString() }).eq('id', id);
+    await refreshAdminChatThread(id);
+  }catch(e){
+    showToast("Échec de l'envoi de la réponse");
+    console.error(e);
+  }
 }
 
 /* ---- Avis (modération) ---- */
@@ -2806,15 +3025,27 @@ let ADMIN_DASHBOARD_PERIOD = '30j';
 let ADMIN_DASHBOARD_CUSTOM_FROM = '';
 let ADMIN_DASHBOARD_CUSTOM_TO = '';
 let ADMIN_DASHBOARD_ORDERS_CACHE = [];
+let ADMIN_DASHBOARD_PAGEVIEWS_CACHE = [];
 
 async function renderAdminDashboard(){
   const el = document.getElementById('adminTab-dashboard');
   el.innerHTML = `<p class="card-sub">Chargement…</p>`;
   ADMIN_DASHBOARD_ORDERS_CACHE = await getOrdersForAdmin();
+  ADMIN_DASHBOARD_PAGEVIEWS_CACHE = await getPageViewsForAdmin();
   renderDashboardContent();
 }
-function getFilteredDashboardOrders(){
-  const orders = ADMIN_DASHBOARD_ORDERS_CACHE || [];
+async function getPageViewsForAdmin(){
+  if(!SUPABASE_ENABLED) return [];
+  try{
+    const { data, error } = await db.from('page_views').select('page, item_id, created_at').order('created_at', { ascending:false }).limit(20000);
+    if(error) throw error;
+    return (data||[]).map(r => ({ page: r.page, itemId: r.item_id, date: new Date(r.created_at).getTime() }));
+  }catch(e){
+    console.warn('page_views fetch failed:', e);
+    return [];
+  }
+}
+function getDashboardDateRange(){
   const now = new Date();
   let from = null, to = null;
   if(ADMIN_DASHBOARD_PERIOD === 'today'){
@@ -2829,7 +3060,17 @@ function getFilteredDashboardOrders(){
     from = ADMIN_DASHBOARD_CUSTOM_FROM ? new Date(ADMIN_DASHBOARD_CUSTOM_FROM).getTime() : null;
     to = ADMIN_DASHBOARD_CUSTOM_TO ? new Date(ADMIN_DASHBOARD_CUSTOM_TO + 'T23:59:59').getTime() : null;
   }
+  return { from, to };
+}
+function getFilteredDashboardOrders(){
+  const orders = ADMIN_DASHBOARD_ORDERS_CACHE || [];
+  const { from, to } = getDashboardDateRange();
   return orders.filter(o => (from == null || o.date >= from) && (to == null || o.date <= to));
+}
+function getFilteredDashboardPageViews(){
+  const views = ADMIN_DASHBOARD_PAGEVIEWS_CACHE || [];
+  const { from, to } = getDashboardDateRange();
+  return views.filter(v => (from == null || v.date >= from) && (to == null || v.date <= to));
 }
 function setDashboardPeriod(period){
   ADMIN_DASHBOARD_PERIOD = period;
@@ -2853,8 +3094,19 @@ function renderDashboardContent(){
   const itemCounts = {};
   orders.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + i.qty; }));
   const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  const pageViews = getFilteredDashboardPageViews();
+  const totalVisits = pageViews.length;
+  const viewCounts = {};
+  pageViews.forEach(v => { if(v.itemId) viewCounts[v.itemId] = (viewCounts[v.itemId]||0) + 1; });
+  const topViewed = Object.entries(viewCounts)
+    .map(([id,count]) => ({ item: ALL_ITEMS[id], count }))
+    .filter(x => x.item)
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,5);
+
   const noteText = SUPABASE_ENABLED
-    ? "Ces statistiques comptent toutes les commandes reçues via Supabase, quel que soit l'appareil utilisé par vos clients."
+    ? "Ces statistiques comptent toutes les commandes et visites reçues via Supabase, quel que soit l'appareil utilisé par vos clients."
     : "Ces statistiques ne comptent que les commandes envoyées depuis <strong>cet appareil</strong> — Supabase n'est pas encore configuré. Voir le fichier schema-supabase.sql pour centraliser les commandes de tous vos clients.";
 
   const periods = [
@@ -2878,10 +3130,14 @@ function renderDashboardContent(){
     <div class="admin-stat-grid">
       <div class="admin-stat-card"><div class="stat-num">${totalOrders}</div><div class="stat-label">Commandes</div></div>
       <div class="admin-stat-card"><div class="stat-num">${formatHTG(totalRevenue)}</div><div class="stat-label">Encaissé (paiements confirmés)</div></div>
+      <div class="admin-stat-card"><div class="stat-num">${totalVisits}</div><div class="stat-label">Visites du site</div></div>
       <div class="admin-stat-card"><div class="stat-num">${CATALOG.products.length + CATALOG.services.length}</div><div class="stat-label">Articles au catalogue</div></div>
     </div>
     <h3>Articles les plus commandés</h3>
     ${topItems.length ? '<ul class="admin-list">' + topItems.map(([n,q])=>`<li>${escapeHtml(n)} — ${q}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune commande sur cette période.</p>'}
+    <h3>Produits et services les plus consultés</h3>
+    <div class="admin-note">Compte chaque visite d'une fiche produit/service, même sans commande.</div>
+    ${topViewed.length ? '<ul class="admin-list">' + topViewed.map(x=>`<li>${escapeHtml(x.item.name)} — ${x.count} consultation${x.count>1?'s':''}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune consultation enregistrée sur cette période.</p>'}
   `;
 }
 function toggleDashboardCustomRange(){
@@ -3670,6 +3926,15 @@ applySiteContent();
 applyPageContent();
 if(document.body.dataset.page === 'article') initArticlePage();
 if(document.body.dataset.page === 'admin') checkAdminSession();
+function logPageView(page, itemId){
+  if(!SUPABASE_ENABLED) return;
+  try{
+    db.from('page_views').insert({ page, item_id: itemId || null }).then(()=>{}, ()=>{});
+  }catch(e){ /* le suivi de visite ne doit jamais bloquer l'affichage du site */ }
+}
+if(document.body.dataset.page && document.body.dataset.page !== 'article' && document.body.dataset.page !== 'admin'){
+  logPageView(document.body.dataset.page);
+}
 if(document.body.dataset.page === 'retour-paiement') initPaymentReturnPage();
 
 const emailField = document.getElementById('adminEmailField');
