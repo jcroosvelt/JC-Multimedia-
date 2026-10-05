@@ -212,6 +212,17 @@ header.site{
 
 .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px;}
 
+/* Diaporama "Actuellement en spécial" — défilement horizontal au
+   doigt, une carte s'aligne proprement à chaque arrêt. */
+.promo-carousel{
+  display:flex; gap:14px; overflow-x:auto; padding:4px 4px 14px;
+  scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+}
+.promo-carousel .card{
+  flex:0 0 auto; width:min(240px, 76vw); scroll-snap-align:start;
+}
+
 /* Grille des aperçus Boutique/Services sur l'accueil : 2 colonnes sur
    mobile, 3 sur tablette, 5 sur ordinateur — indépendant de .grid pour
    ne pas affecter les pages Boutique/Services elles-mêmes. */
