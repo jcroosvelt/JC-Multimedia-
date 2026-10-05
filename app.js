@@ -740,20 +740,6 @@ async function refreshCatalog(){
 }
 // Indicateur de diagnostic TEMPORAIRE, visible directement sur la page
 // (sans outils techniques) — sera retiré dès que le problème des codes
-// promo sera résolu. Affiche en bas de l'écran ce que le site a
-// réellement trouvé/fait à chaque étape.
-function promoDiag(text){
-  try{
-    let el = document.getElementById('promoDiagBox');
-    if(!el){
-      el = document.createElement('div');
-      el.id = 'promoDiagBox';
-      el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#000;color:#0f0;font-size:11px;line-height:1.4;padding:8px;z-index:99999;font-family:monospace;white-space:pre-wrap;max-height:40vh;overflow-y:auto;';
-      document.body.appendChild(el);
-    }
-    el.textContent += text + '\n';
-  }catch(e){}
-}
 async function refreshPromos(){
   // Remet à zéro toute remise précédemment appliquée (au cas où un
   // article ne serait plus concerné par aucun code promo actif).
@@ -762,23 +748,26 @@ async function refreshPromos(){
     item.specialPrice = null;
     item.specialName = null;
   });
-  promoDiag('[promo] debut refreshPromos — SUPABASE_ENABLED=' + SUPABASE_ENABLED + ' — ' + (CATALOG.products.length + CATALOG.services.length) + ' articles en memoire');
   if(!SUPABASE_ENABLED) return;
   try{
-    const { data: codes, error: codesErr } = await db.from('promo_codes').select('id, name, discount_percent').eq('active', true);
-    if(codesErr) promoDiag('[promo] ERREUR codes: ' + JSON.stringify(codesErr));
-    promoDiag('[promo] codes actifs trouves: ' + (codes ? codes.length : 'null') + ' — ' + JSON.stringify(codes));
+    const { data: codes } = await db.from('promo_codes').select('id, name, discount_percent').eq('active', true);
     if(!codes || !codes.length) return;
-    const { data: links, error: linksErr } = await db.from('promo_code_items').select('promo_code_id, catalog_item_id');
-    if(linksErr) promoDiag('[promo] ERREUR liens: ' + JSON.stringify(linksErr));
-    promoDiag('[promo] liens trouves: ' + (links ? links.length : 'null'));
+    const { data: links } = await db.from('promo_code_items').select('promo_code_id, catalog_item_id');
     const codeById = {};
     codes.forEach(c => codeById[c.id] = c);
+    // IMPORTANT : on cherche toujours l'article dans le catalogue tout
+    // juste reçu (CATALOG), jamais dans ALL_ITEMS — à ce stade, ALL_ITEMS
+    // n'a pas encore été reconstruit pour ce nouveau catalogue (ça arrive
+    // juste après) et peut encore pointer vers d'anciens objets périmés.
+    // Écrire la remise dessus serait sans effet, puisqu'ils sont jetés
+    // juste après par rebuildIndex().
+    const currentItemsById = {};
+    [...CATALOG.products, ...CATALOG.services].forEach(i => currentItemsById[i.id] = i);
     let matched = 0;
     (links||[]).forEach(link => {
       const code = codeById[link.promo_code_id];
       if(!code) return;
-      const item = ALL_ITEMS[link.catalog_item_id] || [...CATALOG.products, ...CATALOG.services].find(i => i.id === link.catalog_item_id);
+      const item = currentItemsById[link.catalog_item_id];
       if(!item || item.isDimensionBased) return;
       // Certaines bases de données renvoient un pourcentage sous forme de
       // texte ("15") plutôt que de nombre — on le convertit explicitement
@@ -795,9 +784,7 @@ async function refreshPromos(){
         matched++;
       }
     });
-    promoDiag('[promo] articles marques en promo: ' + matched);
   }catch(e){
-    promoDiag('[promo] EXCEPTION: ' + (e && e.message ? e.message : JSON.stringify(e)));
     console.warn('refreshPromos failed:', e);
   }
 }
@@ -966,9 +953,6 @@ function renderGrid(){
       promoSection.style.display = 'none';
     }
   }
-  const badgesInDom = document.querySelectorAll('.promo-flag').length;
-  const itemsWithSpecial = [...CATALOG.products, ...CATALOG.services].filter(i => i.specialPercent != null).length;
-  promoDiag('[promo] apres renderGrid — badges "Spécial" dans la page: ' + badgesInDom + ' — articles avec remise en memoire: ' + itemsWithSpecial);
 }
 function stepQty(id, delta){
   uiQty[id] = Math.min(MAX_QTY, Math.max(1, (uiQty[id]||1) + delta));
