@@ -966,6 +966,9 @@ function renderGrid(){
       promoSection.style.display = 'none';
     }
   }
+  const badgesInDom = document.querySelectorAll('.promo-flag').length;
+  const itemsWithSpecial = [...CATALOG.products, ...CATALOG.services].filter(i => i.specialPercent != null).length;
+  promoDiag('[promo] apres renderGrid — badges "Spécial" dans la page: ' + badgesInDom + ' — articles avec remise en memoire: ' + itemsWithSpecial);
 }
 function stepQty(id, delta){
   uiQty[id] = Math.min(MAX_QTY, Math.max(1, (uiQty[id]||1) + delta));
