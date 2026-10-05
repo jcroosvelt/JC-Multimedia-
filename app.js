@@ -738,6 +738,22 @@ async function refreshCatalog(){
   renderGrid();
   if(document.body.dataset.page === 'article') initArticlePage();
 }
+// Indicateur de diagnostic TEMPORAIRE, visible directement sur la page
+// (sans outils techniques) — sera retiré dès que le problème des codes
+// promo sera résolu. Affiche en bas de l'écran ce que le site a
+// réellement trouvé/fait à chaque étape.
+function promoDiag(text){
+  try{
+    let el = document.getElementById('promoDiagBox');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'promoDiagBox';
+      el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#000;color:#0f0;font-size:11px;line-height:1.4;padding:8px;z-index:99999;font-family:monospace;white-space:pre-wrap;max-height:40vh;overflow-y:auto;';
+      document.body.appendChild(el);
+    }
+    el.textContent += text + '\n';
+  }catch(e){}
+}
 async function refreshPromos(){
   // Remet à zéro toute remise précédemment appliquée (au cas où un
   // article ne serait plus concerné par aucun code promo actif).
@@ -746,28 +762,42 @@ async function refreshPromos(){
     item.specialPrice = null;
     item.specialName = null;
   });
+  promoDiag('[promo] debut refreshPromos — SUPABASE_ENABLED=' + SUPABASE_ENABLED + ' — ' + (CATALOG.products.length + CATALOG.services.length) + ' articles en memoire');
   if(!SUPABASE_ENABLED) return;
   try{
-    const { data: codes } = await db.from('promo_codes').select('id, name, discount_percent').eq('active', true);
+    const { data: codes, error: codesErr } = await db.from('promo_codes').select('id, name, discount_percent').eq('active', true);
+    if(codesErr) promoDiag('[promo] ERREUR codes: ' + JSON.stringify(codesErr));
+    promoDiag('[promo] codes actifs trouves: ' + (codes ? codes.length : 'null') + ' — ' + JSON.stringify(codes));
     if(!codes || !codes.length) return;
-    const { data: links } = await db.from('promo_code_items').select('promo_code_id, catalog_item_id');
+    const { data: links, error: linksErr } = await db.from('promo_code_items').select('promo_code_id, catalog_item_id');
+    if(linksErr) promoDiag('[promo] ERREUR liens: ' + JSON.stringify(linksErr));
+    promoDiag('[promo] liens trouves: ' + (links ? links.length : 'null'));
     const codeById = {};
     codes.forEach(c => codeById[c.id] = c);
+    let matched = 0;
     (links||[]).forEach(link => {
       const code = codeById[link.promo_code_id];
       if(!code) return;
       const item = ALL_ITEMS[link.catalog_item_id] || [...CATALOG.products, ...CATALOG.services].find(i => i.id === link.catalog_item_id);
       if(!item || item.isDimensionBased) return;
+      // Certaines bases de données renvoient un pourcentage sous forme de
+      // texte ("15") plutôt que de nombre — on le convertit explicitement
+      // pour ne jamais comparer ou calculer avec un texte par erreur.
+      const percent = Number(code.discount_percent);
+      if(!percent || percent <= 0) return;
       // Si plusieurs codes s'appliquent au même article, on retient
       // toujours la remise la plus avantageuse pour le client.
-      if(item.specialPercent == null || code.discount_percent > item.specialPercent){
-        const base = item.startingPrice != null ? item.startingPrice : item.price;
-        item.specialPercent = code.discount_percent;
-        item.specialPrice = Math.round(base * (1 - code.discount_percent / 100) * 100) / 100;
+      if(item.specialPercent == null || percent > item.specialPercent){
+        const base = Number(item.startingPrice != null ? item.startingPrice : item.price) || 0;
+        item.specialPercent = percent;
+        item.specialPrice = Math.round(base * (1 - percent / 100) * 100) / 100;
         item.specialName = code.name;
+        matched++;
       }
     });
+    promoDiag('[promo] articles marques en promo: ' + matched);
   }catch(e){
+    promoDiag('[promo] EXCEPTION: ' + (e && e.message ? e.message : JSON.stringify(e)));
     console.warn('refreshPromos failed:', e);
   }
 }
@@ -924,7 +954,10 @@ function renderGrid(){
   const promoSection = document.getElementById('promoSection');
   const promoGrid = document.getElementById('promoGrid');
   if(promoSection && promoGrid){
-    const promoItems = [...CATALOG.products, ...CATALOG.services].filter(i => i.promo);
+    // Inclut à la fois l'ancien marquage manuel (promo) et les articles
+    // couverts par un code promo actif (specialPercent) — un article ne
+    // doit jamais être compté deux fois s'il a les deux à la fois.
+    const promoItems = [...CATALOG.products, ...CATALOG.services].filter(i => i.promo || i.specialPercent != null);
     if(promoItems.length){
       promoGrid.innerHTML = promoItems.map(cardHTML).join('');
       promoSection.style.display = 'block';
