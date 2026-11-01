@@ -397,8 +397,8 @@ footer nav a:hover{color:var(--amber);}
 .opt-btn.selected{background:var(--amber); color:#fff; border-color:var(--amber); font-weight:700;}
 .check-row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:.92rem; color:var(--text);}
 .check-row input{width:18px;height:18px; accent-color:var(--amber);}
-.modal-actions{display:flex; gap:10px; margin-top:20px;}
-.modal-actions .btn{flex:1;}
+.modal-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:20px;}
+.modal-actions .btn{flex:1 1 120px; min-width:0; justify-content:center; text-align:center;}
 .modal-cancel{display:block; margin:12px auto 0; background:none; border:none; color:var(--muted); font-size:.85rem; cursor:pointer;}
 .modal-confirm{text-align:center; padding-top:6px;}
 .confirm-icon{
@@ -597,3 +597,9 @@ footer nav a:hover{color:var(--amber);}
 .cash-online{background:#E3F6EC; color:#157347;}
 .cash-manual{background:#EEF1F7; color:var(--navy);}
 .cash-none{background:#FFF4D6; color:#8A5A00;}
+
+/* Admin sur téléphone : rien ne doit dépasser de l'écran (longs liens,
+   noms de fichiers, codes sans espace…) */
+.admin-tab-panel{min-width:0; overflow-wrap:anywhere;}
+.admin-tab-panel input, .admin-tab-panel select, .admin-tab-panel textarea,
+.admin-tab-panel img, .admin-tab-panel canvas, .admin-tab-panel table{max-width:100%;}
