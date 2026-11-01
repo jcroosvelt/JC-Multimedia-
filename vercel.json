@@ -17,7 +17,8 @@
     { "source": "/article/:id", "destination": "/article.html" },
     { "source": "/boutique/:slug", "destination": "/article.html" },
     { "source": "/services/:slug", "destination": "/article.html" },
-    { "source": "/partage/:section/:slug", "destination": "/api/share?section=:section&slug=:slug" }
+    { "source": "/partage/:section/:slug", "destination": "/api/share?section=:section&slug=:slug" },
+    { "source": "/payer/:token", "destination": "/payer.html" }
   ],
   "headers": [
     {

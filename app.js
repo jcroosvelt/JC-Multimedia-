@@ -817,7 +817,7 @@ let customCart = loadCustomCart(); // [{id, itemId, name, code, price, qty, widt
 let uiQty = {};              // quantité en attente sur les cartes avant "Ajouter au panier"
 rebuildIndex();
 
-let orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null };
+let orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, modelFiles:[] };
 
 function loadCart(){
   const stored = safeGet(CART_STORAGE_KEY);
@@ -944,7 +944,7 @@ function renderGrid(){
     // Inclut à la fois l'ancien marquage manuel (promo) et les articles
     // couverts par un code promo actif (specialPercent) — un article ne
     // doit jamais être compté deux fois s'il a les deux à la fois.
-    const promoItems = [...CATALOG.products, ...CATALOG.services].filter(i => i.promo || i.specialPercent != null);
+    const promoItems = shuffleArray([...CATALOG.products, ...CATALOG.services].filter(i => i.promo || i.specialPercent != null));
     if(promoItems.length){
       promoGrid.innerHTML = promoItems.map(cardHTML).join('');
       promoSection.style.display = 'block';
@@ -1500,7 +1500,7 @@ function runPendingConfirm(){
    ========================================================= */
 function startOrderFlow(){
   const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
-  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[], details:"" };
+  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[], modelFiles:[], details:"", servicePhotoSlots:5 };
   showStepCustomerInfo();
 }
 function showStepCustomerInfo(){
@@ -1535,28 +1535,121 @@ function collectCustomerInfo(){
   orderFlow.customerName = name;
   orderFlow.customerPhone = phone;
   orderFlow.customerAddress = address;
+  // Une commande contenant au moins un service suit désormais le
+  // parcours dédié (fichiers modèles + photos + description) avant
+  // la livraison et le paiement réel. Une commande de produits purs
+  // garde son parcours existant (personnalisation éventuelle, puis
+  // livraison et paiement).
+  if(hasServiceInOrder()){ showStepServiceUploads(); return; }
   const customizableInCart = cartEntries().filter(i => i.customizable);
   if(customizableInCart.length > 0){ showStepCustomizeAsk(); } else { goPastCustomize(); }
 }
 /* L'étape "Détails de votre commande" (description + fichiers) n'a de
-   sens que si le client personnalise un article, ou si sa commande
-   contient un service — jamais pour une commande de simples produits
-   sans personnalisation. */
+   sens que si le client personnalise un produit — les services ont
+   désormais leur propre étape dédiée (showStepServiceUploads). */
 function shouldShowFilesStep(){
-  return cartEntries().some(i => isEstimate(i)) || orderFlow.customize === true;
+  return orderFlow.customize === true;
 }
-/* Une commande de PRODUITS PURS (aucun service) suit un ordre différent :
-   infos → livraison → paiement réel (MonCash/NatCash). Une commande
-   avec au moins un service garde l'ancien parcours : infos → paiement
-   (choix uniquement) → livraison → envoi WhatsApp direct. */
+/* Une commande de PRODUITS PURS (aucun service) : infos → (personnalisation
+   éventuelle) → livraison → paiement réel. */
 function isPureProductOrder(){
   const items = cartEntries();
   return items.length > 0 && items.every(i => !isEstimate(i));
 }
+/* Une commande avec au moins un service (seul ou mélangé à des
+   produits) : infos → fichiers modèles/photos/description → livraison
+   → paiement réel MonCash/NatCash → récapitulatif WhatsApp après
+   paiement confirmé. */
+function hasServiceInOrder(){
+  return cartEntries().some(i => isEstimate(i));
+}
 function goPastCustomize(){
   if(shouldShowFilesStep()){ showStepFiles(); }
-  else if(isPureProductOrder()){ showStepDelivery(); }
-  else { showStepPayment(); }
+  else { showStepDelivery(); }
+}
+
+/* =========================================================
+   ÉTAPE DÉDIÉE AUX SERVICES — fichiers modèles (jusqu'à 2),
+   photos du client (5 minimum, extensible), description du projet.
+   ========================================================= */
+const MAX_SERVICE_PHOTOS = 20;
+function renderServicePhotoSlots(){
+  return Array.from({length: orderFlow.servicePhotoSlots || 5}, (_, slot) => `
+    <div class="admin-image-slot">
+      <div class="admin-image-preview" id="sphoto-preview-${slot}">${orderFlow.uploadFiles[slot] ? `<span>${orderFlow.uploadFiles[slot].name.slice(0,14)}</span>` : '<span>Aucun fichier</span>'}</div>
+      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" id="sphoto-${slot}" onchange="handleServicePhotoChange(${slot})">
+    </div>
+  `).join('');
+}
+function addServicePhotoSlot(){
+  if((orderFlow.servicePhotoSlots || 5) >= MAX_SERVICE_PHOTOS){ showToast("Maximum " + MAX_SERVICE_PHOTOS + " photos"); return; }
+  orderFlow.servicePhotoSlots = (orderFlow.servicePhotoSlots || 5) + 1;
+  document.getElementById('servicePhotosRow').innerHTML = renderServicePhotoSlots();
+}
+function handleServicePhotoChange(slot){
+  const input = document.getElementById('sphoto-'+slot);
+  const file = input.files[0];
+  const errorEl = document.getElementById('serviceUploadError');
+  if(errorEl) errorEl.style.display = 'none';
+  if(!file) return;
+  if(file.size > MAX_UPLOAD_SIZE){
+    showToast("Fichier trop volumineux (5 Mo maximum)");
+    input.value = '';
+    return;
+  }
+  orderFlow.uploadFiles[slot] = file;
+  document.getElementById('sphoto-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
+}
+function handleModelFileChange(slot){
+  const input = document.getElementById('cmodel-'+slot);
+  const file = input.files[0];
+  if(!file) return;
+  if(file.size > MAX_UPLOAD_SIZE){
+    showToast("Fichier trop volumineux (5 Mo maximum)");
+    input.value = '';
+    return;
+  }
+  orderFlow.modelFiles[slot] = file;
+  document.getElementById('cmodel-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
+}
+function showStepServiceUploads(){
+  openStep(`
+    <h3>Votre projet</h3>
+    <div class="form-field">
+      <label>Fichiers modèles (jusqu'à 2) — montrez-nous un style ou un exemple de ce que vous voulez, facultatif</label>
+      <div class="admin-image-row">
+        ${[0,1].map(slot => `
+          <div class="admin-image-slot">
+            <div class="admin-image-preview" id="cmodel-preview-${slot}">${orderFlow.modelFiles[slot] ? `<span>${orderFlow.modelFiles[slot].name.slice(0,14)}</span>` : '<span>Aucun fichier</span>'}</div>
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" id="cmodel-${slot}" onchange="handleModelFileChange(${slot})">
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="form-field">
+      <label>Vos photos (minimum 5) — le contenu à utiliser pour votre projet</label>
+      <div class="admin-image-row" id="servicePhotosRow">${renderServicePhotoSlots()}</div>
+      <button type="button" class="btn btn-ghost" style="margin-top:8px;" onclick="addServicePhotoSlot()">+ Ajouter une photo</button>
+      <p id="serviceUploadError" class="form-error" style="display:none;">Merci de joindre au moins 5 photos.</p>
+    </div>
+    <div class="form-field">
+      <label>Décrivez votre projet</label>
+      <textarea id="serviceDescription" rows="4" placeholder="Expliquez ce que vous souhaitez (couleur, taille, texte, style, délai…)">${orderFlow.details || ''}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="showStepCustomerInfo()">Retour</button>
+      <button class="btn btn-primary" onclick="collectServiceUploads()">Suivant</button>
+    </div>
+  `, "Votre projet");
+}
+function collectServiceUploads(){
+  const photoCount = orderFlow.uploadFiles.filter(Boolean).length;
+  if(photoCount < 5){
+    document.getElementById('serviceUploadError').style.display = 'block';
+    return;
+  }
+  orderFlow.details = document.getElementById('serviceDescription').value.trim();
+  showStepDelivery();
 }
 function showStepCustomizeAsk(){
   openStep(`
@@ -1578,13 +1671,15 @@ function buildWhatsappRecapMessage(summary){
   const SEP = "─────────────────────%0A";
   let msg = `✅ *PAIEMENT CONFIRMÉ — JC MULTIMEDIA*%0A${SEP}`;
   msg += `*Réf. commande :* ${summary.orderCode}%0A%0A`;
-  msg += `*CLIENT*%0ANom : ${summary.customerName}%0ATéléphone : ${summary.customerPhone}%0A`;
+  msg += `*CLIENT*%0ANom : ${summary.customerName}%0A`;
+  if(summary.customerPhone) msg += `Téléphone : ${summary.customerPhone}%0A`;
   if(summary.customerAddress) msg += `Adresse : ${summary.customerAddress}%0A`;
   msg += `%0A${SEP}*ARTICLES*%0A`;
   (summary.items||[]).forEach(i => {
     msg += `▪ ${i.name}${i.code ? ` (${i.code})` : ''} × ${i.qty}%0A`;
   });
-  msg += `%0A${SEP}*Total payé : ${formatHTG(summary.total)}* (≈ ${formatUSD(summary.total)})%0ALivraison : ${summary.delivery}`;
+  msg += `%0A${SEP}*Total payé : ${formatHTG(summary.total)}* (≈ ${formatUSD(summary.total)})`;
+  if(summary.delivery) msg += `%0ALivraison : ${summary.delivery}`;
   msg += `%0A%0A${SEP}Merci pour votre confiance ! Ceci est une confirmation — aucune action supplémentaire n'est requise de votre part.`;
   return msg;
 }
@@ -1643,6 +1738,8 @@ async function retryPayment(method){
   const summary = safeGet(PAYMENT_SUMMARY_KEY);
   const retryEl = document.getElementById('retryStatus');
   if(!summary){ if(retryEl) retryEl.textContent = "Détails de commande introuvables — contactez-nous directement."; return; }
+  // Commande payée via un lien de paiement : on retourne simplement sur ce lien.
+  if(summary.payToken){ window.location.href = '/payer/' + encodeURIComponent(summary.payToken); return; }
   if(retryEl) retryEl.textContent = "Préparation du paiement…";
   try{
     const newRef = `${summary.orderCode}-${Date.now()}`;
@@ -1668,138 +1765,122 @@ async function retryPayment(method){
 }
 
 /* =========================================================
-   CHAT EN DIRECT — widget flottant permettant à un visiteur
-   d'écrire à JC Multimedia (texte ou fichier joint), avec réponse
-   depuis l'admin. L'identifiant de conversation (imprévisible) est
-   conservé sur l'appareil du visiteur pour retrouver l'historique
-   à sa prochaine visite — jamais de liste publique des conversations.
+   LIEN DE PAIEMENT — page /payer/<jeton> envoyée au client
+   (commande prise sur WhatsApp et créée depuis l'admin).
+   Lecture via la fonction SQL get_payment_link (renvoie
+   uniquement cette commande) ; le paiement passe par l'Edge
+   Function pay-link, qui relit le montant dans la base.
    ========================================================= */
-const CHAT_CONV_KEY = "jc_multimedia_chat_conversation_id";
-const CHAT_SEEN_COUNT_KEY = "jc_multimedia_chat_seen_count";
-const CHAT_ALLOWED_TYPES = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
-const CHAT_MAX_FILE_SIZE = 5 * 1024 * 1024;
-let chatConversationId = safeGet(CHAT_CONV_KEY);
-let chatPollInterval = null;
+const PAY_LINK_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/pay-link";
+let PAY_LINK_DATA = null;
 
-function toggleChatPanel(){
-  const panel = document.getElementById('chatPanel');
-  if(!panel) return;
-  const isOpen = panel.style.display === 'flex';
-  if(isOpen){
-    panel.style.display = 'none';
-    if(chatPollInterval){ clearInterval(chatPollInterval); chatPollInterval = null; }
-  } else {
-    panel.style.display = 'flex';
-    loadChatMessages();
-    if(chatPollInterval) clearInterval(chatPollInterval);
-    chatPollInterval = setInterval(loadChatMessages, 8000);
-  }
+function payLinkToken(){
+  const m = window.location.pathname.match(/\/payer\/([A-Za-z0-9]+)/);
+  if(m) return m[1];
+  return new URLSearchParams(window.location.search).get('t') || '';
 }
 
-async function ensureChatConversation(){
-  if(chatConversationId) return chatConversationId;
-  if(!SUPABASE_ENABLED) return null;
-  try{
-    const { data, error } = await db.rpc('create_chat_conversation');
-    if(error) throw error;
-    chatConversationId = data;
-    safeSet(CHAT_CONV_KEY, chatConversationId);
-    return chatConversationId;
-  }catch(e){
-    console.warn('chat conversation creation failed:', e);
-    return null;
-  }
-}
-
-async function loadChatMessages(){
-  const messagesEl = document.getElementById('chatMessages');
-  if(!messagesEl) return;
-  if(!chatConversationId || !SUPABASE_ENABLED){
-    messagesEl.innerHTML = `<p class="card-sub">Envoyez-nous un message, nous vous répondrons dès que possible !</p>`;
+async function initPayLinkPage(){
+  const box = document.getElementById('payLinkBox');
+  if(!box) return;
+  const token = payLinkToken();
+  if(!token || !SUPABASE_ENABLED){
+    box.innerHTML = `<p class="card-sub">Ce lien de paiement est incomplet. Contactez-nous sur WhatsApp pour recevoir un nouveau lien.</p>`;
     return;
   }
   try{
-    const { data, error } = await db.rpc('get_chat_messages', { p_conversation_id: chatConversationId });
+    const { data, error } = await db.rpc('get_payment_link', { p_token: token });
     if(error) throw error;
-    const messages = data || [];
-    renderChatMessages(messages);
-    const panel = document.getElementById('chatPanel');
-    const isOpen = panel && panel.style.display === 'flex';
-    if(isOpen){
-      safeSet(CHAT_SEEN_COUNT_KEY, messages.length);
-      hideChatBadge();
-    } else {
-      const seen = safeGet(CHAT_SEEN_COUNT_KEY) || 0;
-      const hasNewAdminReply = messages.slice(seen).some(m => m.sender === 'admin');
-      if(hasNewAdminReply) showChatBadge();
+    if(!data){
+      box.innerHTML = `<p class="card-sub">Ce lien de paiement n'est pas valide. Contactez-nous sur WhatsApp pour recevoir un nouveau lien.</p>`;
+      return;
     }
+    PAY_LINK_DATA = { ...data, token };
+    renderPayLink();
   }catch(e){
-    console.warn('loadChatMessages failed:', e);
+    console.error('initPayLinkPage:', e);
+    box.innerHTML = `<p class="card-sub">Impossible de charger votre commande pour le moment. Réessayez dans un instant.</p>`;
   }
 }
 
-function renderChatMessages(messages){
-  const el = document.getElementById('chatMessages');
-  if(!el) return;
-  el.innerHTML = messages.length ? messages.map(m => `
-    <div class="chat-msg chat-msg-${m.sender === 'admin' ? 'admin' : 'visitor'}">
-      ${m.body ? `<div class="chat-msg-text">${escapeHtml(m.body)}</div>` : ''}
-      ${m.file_url ? `<div class="chat-msg-text">📎 ${escapeHtml(m.file_name || 'Fichier envoyé')}</div>` : ''}
+function renderPayLink(){
+  const box = document.getElementById('payLinkBox');
+  const d = PAY_LINK_DATA;
+  const total = Number(d.total) || 0;
+  const items = (d.items || []).map(i => `
+    <div class="cart-item">
+      <div>
+        <div class="ci-name">${escapeHtml(i.name || '')}</div>
+        <div class="ci-price">${Number(i.qty)||0} × ${formatHTG(Number(i.unit_price)||0)}</div>
+      </div>
+      <strong class="mono">${formatHTG(Number(i.line_total)||0)}</strong>
+    </div>`).join('');
+  const header = `
+    <div class="admin-note" style="margin-bottom:14px;">
+      Commande <strong>${escapeHtml(d.code || '')}</strong>${d.customer_name ? ` — ${escapeHtml(d.customer_name)}` : ''}
     </div>
-  `).join('') : `<p class="card-sub">Envoyez-nous un message, nous vous répondrons dès que possible !</p>`;
-  el.scrollTop = el.scrollHeight;
+    ${items}
+    <div class="cart-total-row" style="margin-top:12px;"><span>Total à payer</span><span class="amt">${priceDualInline(total)}</span></div>
+    ${d.delivery ? `<p class="card-sub">Livraison : ${escapeHtml(d.delivery)}</p>` : ''}`;
+  let actions;
+  if(d.paid){
+    actions = `<p class="card-sub" style="margin-top:14px;">✅ Cette commande est déjà payée. Merci pour votre confiance !</p>`;
+  } else if(d.status === 'Annulée' || d.status === 'Refusée'){
+    actions = `<p class="card-sub" style="margin-top:14px;">Cette commande a été annulée. Contactez-nous sur WhatsApp si besoin.</p>`;
+  } else {
+    actions = `
+      <div class="form-field" style="margin-top:16px;">
+        <label>Payer avec</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="payLinkMoncash" onclick="payLinkPay('moncash')">MonCash</button>
+          <button class="btn btn-wa" id="payLinkNatcash" onclick="payLinkPay('natcash')">Natcash</button>
+        </div>
+      </div>
+      <p class="card-sub" id="payLinkStatus">Vous serez redirigé vers la page de paiement sécurisée, puis de retour sur notre site.</p>`;
+  }
+  box.innerHTML = header + actions;
 }
 
-async function sendChatMessage(){
-  const input = document.getElementById('chatTextInput');
-  const text = input.value.trim();
-  if(!text) return;
-  input.value = '';
-  const convId = await ensureChatConversation();
-  if(!convId){ showToast("Impossible d'envoyer le message — réessayez."); return; }
+async function payLinkPay(method){
+  const d = PAY_LINK_DATA;
+  if(!d) return;
+  const statusEl = document.getElementById('payLinkStatus');
+  const btns = [document.getElementById('payLinkMoncash'), document.getElementById('payLinkNatcash')];
+  btns.forEach(b => { if(b) b.disabled = true; });
+  if(statusEl) statusEl.textContent = 'Préparation du paiement…';
+  const fail = (msg) => {
+    btns.forEach(b => { if(b) b.disabled = false; });
+    if(statusEl) statusEl.textContent = msg;
+  };
   try{
-    const { error } = await db.from('chat_messages').insert({ conversation_id: convId, sender: 'visitor', body: text });
-    if(error) throw error;
-    loadChatMessages();
+    const resp = await fetch(PAY_LINK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: d.token, method })
+    });
+    const data = await resp.json();
+    if(!data || !data.status || !data.url){
+      if(data && data.message === 'already_paid'){ d.paid = true; renderPayLink(); return; }
+      if(data && data.message === 'order_cancelled'){ d.status = 'Annulée'; renderPayLink(); return; }
+      fail("Le paiement n'a pas pu démarrer. Réessayez ou choisissez l'autre moyen de paiement.");
+      return;
+    }
+    safeSet(PAYMENT_SUMMARY_KEY, {
+      orderId: null, orderCode: data.code || d.code, reference: data.reference, amountHTG: data.amount, method,
+      customerName: d.customer_name || '', customerPhone: '', customerAddress: '', delivery: d.delivery || '',
+      items: (d.items || []).map(i => ({ name: i.name, qty: i.qty, code: null })),
+      total: Number(d.total) || 0,
+      payToken: d.token
+    });
+    safeSet(LAST_PAYMENT_REF_KEY, data.reference);
+    window.location.href = data.url;
   }catch(e){
-    showToast("Échec de l'envoi — réessayez.");
-    console.error(e);
+    console.error('payLinkPay:', e);
+    fail("Erreur de connexion. Réessayez dans un instant.");
   }
 }
 
-async function handleChatFileSelect(){
-  const fileInput = document.getElementById('chatFileInput');
-  const file = fileInput.files[0];
-  if(!file) return;
-  fileInput.value = '';
-  if(!CHAT_ALLOWED_TYPES.includes(file.type)){
-    showToast("Type de fichier non autorisé (images ou PDF uniquement)");
-    return;
-  }
-  if(file.size > CHAT_MAX_FILE_SIZE){
-    showToast("Fichier trop volumineux (5 Mo maximum)");
-    return;
-  }
-  const convId = await ensureChatConversation();
-  if(!convId){ showToast("Impossible d'envoyer le fichier — réessayez."); return; }
-  try{
-    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
-    const safePath = `${convId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-    const { error: upErr } = await db.storage.from('chat-uploads').upload(safePath, file);
-    if(upErr) throw upErr;
-    const { error } = await db.from('chat_messages').insert({ conversation_id: convId, sender: 'visitor', file_url: safePath, file_name: file.name });
-    if(error) throw error;
-    loadChatMessages();
-  }catch(e){
-    showToast("Échec de l'envoi du fichier — réessayez.");
-    console.error(e);
-  }
-}
-
-function showChatBadge(){ const b = document.getElementById('chatFabBadge'); if(b) b.style.display = 'block'; }
-function hideChatBadge(){ const b = document.getElementById('chatFabBadge'); if(b) b.style.display = 'none'; }
-
-const MAX_UPLOAD_FILES = 3;
+const MAX_UPLOAD_FILES = 10;
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5 Mo
 const ALLOWED_UPLOAD_TYPES = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
 
@@ -1850,7 +1931,7 @@ function showStepFiles(){
     <div class="form-field">
       <label>Joindre des fichiers (logo, photo, design…) — jusqu'à ${MAX_UPLOAD_FILES}, 5 Mo max chacun (images ou PDF), facultatif</label>
       <div class="admin-image-row">
-        ${[0,1,2].map(slot => `
+        ${Array.from({length: MAX_UPLOAD_FILES}, (_, slot) => `
           <div class="admin-image-slot">
             <div class="admin-image-preview" id="cfile-preview-${slot}">${orderFlow.uploadFiles[slot] ? `<span>${orderFlow.uploadFiles[slot].name.slice(0,14)}</span>` : '<span>Aucun fichier</span>'}</div>
             <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" id="cfile-${slot}" onchange="handleCustomizeFileChange(${slot})">
@@ -1896,53 +1977,34 @@ function handleCustomizeFileChange(slot){
 }
 function showStepPayment(){
   const options = ["MonCash","Natcash"];
-  const pureProduct = isPureProductOrder();
-  const hasCustomizableInCart = cartEntries().some(i => i.customizable);
-  let backAction;
-  if(pureProduct){
-    backAction = "showStepDelivery()";
-  } else {
-    backAction = shouldShowFilesStep()
-      ? "showStepFiles()"
-      : (hasCustomizableInCart ? "showStepCustomizeAsk()" : "showStepCustomerInfo()");
-  }
-  const nextAction = pureProduct
-    ? "orderFlow.payment ? handleRealPayment() : null"
-    : "orderFlow.payment ? showStepDelivery() : null";
-  const nextLabel = pureProduct ? "Payer" : "Suivant";
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.payment===o?'selected':''}" onclick="selectPayment('${o}')">${o}</button>`).join('')}
-    ${pureProduct ? `<p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.</p>` : ''}
+    <p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.</p>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="${backAction}">Retour</button>
-      <button class="btn btn-primary" id="paymentNextBtn" onclick="${nextAction}">${nextLabel}</button>
+      <button class="btn btn-ghost" onclick="showStepDelivery()">Retour</button>
+      <button class="btn btn-primary" id="paymentNextBtn" onclick="orderFlow.payment ? handleRealPayment() : null">Payer</button>
     </div>
   `, "Mode de paiement");
 }
 function selectPayment(o){ orderFlow.payment = o; showStepPayment(); }
 function showStepDelivery(){
   const options = ["Se faire livrer","Récupérer sur place"];
-  const pureProduct = isPureProductOrder();
-  const backAction = pureProduct
-    ? (shouldShowFilesStep() ? "showStepFiles()" : (cartEntries().some(i=>i.customizable) ? "showStepCustomizeAsk()" : "showStepCustomerInfo()"))
-    : "showStepPayment()";
-  const nextAction = pureProduct
-    ? "orderFlow.delivery ? showStepPayment() : null"
-    : "orderFlow.delivery ? handleSendOrderClick() : null";
-  const nextLabel = pureProduct ? "Suivant" : "Finaliser sur WhatsApp";
+  const hasCustomizableInCart = cartEntries().some(i => i.customizable);
+  const backAction = hasServiceInOrder()
+    ? "showStepServiceUploads()"
+    : (shouldShowFilesStep() ? "showStepFiles()" : (hasCustomizableInCart ? "showStepCustomizeAsk()" : "showStepCustomerInfo()"));
   openStep(`
     <h3>Souhaitez-vous être livré ou récupérer sur place ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.delivery===o?'selected':''}" onclick="selectDelivery('${o}')">${o}</button>`).join('')}
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="${backAction}">Retour</button>
-      <button class="btn btn-primary" id="sendOrderBtn" onclick="${nextAction}">${nextLabel}</button>
+      <button class="btn btn-primary" id="sendOrderBtn" onclick="orderFlow.delivery ? showStepPayment() : null">Suivant</button>
     </div>
   `, "Livraison ou retrait");
 }
 function selectDelivery(o){ orderFlow.delivery = o; showStepDelivery(); }
 
-let orderSending = false;
 const PAYMENT_SUMMARY_KEY = "jc_multimedia_payment_summary";
 const CREATE_PAYMENT_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/create-payment";
 
@@ -2004,22 +2066,9 @@ async function handleRealPayment(){
   }
 }
 
-async function handleSendOrderClick(){
-  if(orderSending) return;
-  orderSending = true;
-  const btn = document.getElementById('sendOrderBtn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
-  try{
-    await sendOrder();
-  } finally {
-    orderSending = false;
-  }
-}
-
 /* Crée la commande + ses lignes + son enregistrement de paiement dans
-   Supabase. Partagé par les deux parcours (WhatsApp classique et
-   paiement réel MonCash/NatCash) pour ne jamais dupliquer cette
-   logique sensible. paymentReference, si fourni, est la référence
+   Supabase (parcours de paiement réel MonCash/NatCash).
+   paymentReference, si fourni, est la référence
    unique envoyée à PLOP PLOP pour CETTE tentative de paiement — elle
    sert ensuite au webhook à retrouver le bon paiement à confirmer. */
 async function createOrderRecord(paymentReference){
@@ -2089,8 +2138,9 @@ async function createOrderRecord(paymentReference){
     // Envoi des fichiers joints (logo, design…) — chemin de stockage
     // toujours généré ici, jamais le nom brut envoyé par le client ;
     // le nom d'origine est seulement conservé pour affichage à l'admin.
-    const filesToUpload = (orderFlow.uploadFiles || []).filter(Boolean);
-    for(const file of filesToUpload){
+    const filesToUpload = (orderFlow.uploadFiles || []).filter(Boolean).map(f => ({ file:f, label:null }));
+    const modelFilesToUpload = (orderFlow.modelFiles || []).filter(Boolean).map(f => ({ file:f, label:'[Modèle] ' }));
+    for(const { file, label } of [...modelFilesToUpload, ...filesToUpload]){
       try{
         const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
         const safePath = `${orderId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
@@ -2098,7 +2148,7 @@ async function createOrderRecord(paymentReference){
         if(upErr) throw upErr;
         await db.from('order_uploads').insert({
           order_id: orderId,
-          original_filename: file.name,
+          original_filename: (label || '') + file.name,
           storage_path: safePath,
           mime_type: file.type,
           size_bytes: file.size
@@ -2112,77 +2162,6 @@ async function createOrderRecord(paymentReference){
   }
 
   return { orderId, orderCode, items, total };
-}
-
-async function sendOrder(){
-  const { orderCode, items, total } = await createOrderRecord();
-
-  const orderRecord = {
-    date: Date.now(),
-    code: orderCode,
-    customerName: orderFlow.customerName,
-    customerPhone: orderFlow.customerPhone,
-    customerAddress: orderFlow.customerAddress,
-    items: items.map(i => ({ name:i.name, qty:i.qty, customized: orderFlow.customizedItems.includes(i.id) })),
-    total: total,
-    exchangeRate: SETTINGS.exchangeRate,
-    payment: orderFlow.payment,
-    delivery: orderFlow.delivery
-  };
-  logOrderLocal(orderRecord);
-
-  const SEP = "─────────────────────%0A";
-  let msg = `📋 *NOUVELLE COMMANDE — JC MULTIMEDIA*%0A${SEP}`;
-  if(orderCode) msg += `*Réf. commande :* ${orderCode}%0A%0A`;
-
-  msg += `*CLIENT*%0A`;
-  msg += `Nom : ${orderFlow.customerName}%0A`;
-  msg += `Téléphone : ${orderFlow.customerPhone}%0A`;
-  if(orderFlow.customerAddress) msg += `Adresse : ${orderFlow.customerAddress}%0A`;
-  msg += `%0A${SEP}`;
-
-  msg += `*ARTICLES*%0A`;
-  items.forEach(i => {
-    const tag = orderFlow.customizedItems.includes(i.id) ? " _(à personnaliser)_" : "";
-    const codeTag = i.code ? ` (${i.code})` : "";
-    const dimTag = i.dimensionsLabel ? ` — ${i.dimensionsLabel}` : "";
-    const lineTotal = unitPrice(i) * i.qty;
-    const amount = `${isEstimate(i) ? 'à partir de ' : ''}${formatHTG(lineTotal)} (≈ ${formatUSD(lineTotal)})${isEstimate(i) ? ' — estimation' : ''}`;
-    msg += `▪ ${i.name}${codeTag} × ${i.qty}${tag}${dimTag}%0A   ${amount}%0A`;
-  });
-  msg += `%0A${SEP}`;
-
-  msg += `*Total estimé : ${formatHTG(total)}* (≈ ${formatUSD(total)})%0A`;
-  msg += `Paiement : ${orderFlow.payment}%0A`;
-  msg += `Livraison : ${orderFlow.delivery}`;
-
-  if(orderFlow.details){
-    msg += `%0A%0A${SEP}*DÉTAILS DE LA DEMANDE*%0A${encodeURIComponent(orderFlow.details)}`;
-  }
-
-  msg += `%0A%0A${SEP}Merci pour votre confiance ! ✅%0ANotre équipe vous répond très vite pour confirmer votre commande.`;
-
-  window.open(`https://wa.me/${SETTINGS.whatsapp}?text=${msg}`, "_blank");
-
-  cart = {};
-  saveCart();
-  updateBadge();
-  showStepConfirmation(orderCode);
-}
-
-function showStepConfirmation(orderCode){
-  const codeBlock = orderCode
-    ? `<p class="order-code-display">Votre code de commande<br><strong>${orderCode}</strong></p>`
-    : '';
-  openStep(`
-    <div class="modal-confirm">
-      <div class="confirm-icon">✓</div>
-      <h3 style="margin-right:0;">Commande envoyée !</h3>
-      ${codeBlock}
-      <p class="card-sub">Votre commande a été transmise sur WhatsApp. Un membre de l'équipe JC Multimedia vous répondra pour confirmer les détails, le paiement et la livraison.</p>
-      <button class="btn btn-primary btn-block" onclick="closeStep(); closeCart();">Fermer</button>
-    </div>
-  `, "Commande envoyée");
 }
 
 /* =========================================================
@@ -2275,8 +2254,9 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','banner','portfolio','reviews','promos','chat','orders','files','customers','settings'].forEach(t=>{
-    document.getElementById('adminTab-'+t).style.display = (t===name) ? 'block' : 'none';
+  ['dashboard','catalog','content','banner','portfolio','reviews','promos','whatsapp','orders','recus','files','customers','settings'].forEach(t=>{
+    const panel = document.getElementById('adminTab-'+t);
+    if(panel) panel.style.display = (t===name) ? 'block' : 'none';
   });
   document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
   if(name==='dashboard') renderAdminDashboard();
@@ -2286,105 +2266,273 @@ function showAdminTab(name){
   if(name==='portfolio') renderAdminPortfolio();
   if(name==='reviews') renderAdminReviews();
   if(name==='promos') renderAdminPromos();
-  if(name==='chat') renderAdminChat();
+  if(name==='whatsapp') renderAdminWhatsapp();
   if(name==='orders') renderAdminOrders();
+  if(name==='recus' && typeof renderAdminRecus === 'function') renderAdminRecus();
   if(name==='files') renderAdminFiles();
   if(name==='customers') renderAdminCustomers();
   if(name==='settings') renderAdminSettings();
 }
-/* ---- Messages du chat en direct ---- */
-let ADMIN_CHAT_CONVERSATIONS = [];
-async function renderAdminChat(){
-  const el = document.getElementById('adminTab-chat');
+/* =========================================================
+   WHATSAPP MARKETING — envoi de messages WhatsApp en masse via
+   Twilio, à des modèles déjà approuvés par WhatsApp (obligatoire :
+   impossible d'envoyer un texte libre à quelqu'un qui ne vous a pas
+   écrit dans les dernières 24h). Les identifiants Twilio restent
+   toujours côté serveur (fonction Supabase), jamais dans ce fichier.
+   ========================================================= */
+const SEND_WHATSAPP_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/send-whatsapp";
+let WA_SUBTAB = 'contacts';
+let WA_MANUAL_CONTACTS = [];
+let WA_CUSTOMER_CONTACTS = [];
+let WA_TEMPLATES = [];
+let WA_SELECTED = new Set();
+
+async function renderAdminWhatsapp(){
+  const el = document.getElementById('adminTab-whatsapp');
   if(!SUPABASE_ENABLED){
-    el.innerHTML = `<div class="admin-note">⚠️ Le chat nécessite que Supabase soit configuré.</div>`;
+    el.innerHTML = `<div class="admin-note">⚠️ Nécessite que Supabase soit configuré.</div>`;
     return;
   }
   el.innerHTML = `<p class="card-sub">Chargement…</p>`;
   try{
-    const { data, error } = await db.from('chat_conversations').select('*').order('last_message_at', { ascending:false });
-    if(error) throw error;
-    ADMIN_CHAT_CONVERSATIONS = data || [];
-    renderAdminChatList();
+    const { data: manual } = await db.from('whatsapp_contacts').select('*').order('name');
+    WA_MANUAL_CONTACTS = manual || [];
+    const { data: templates } = await db.from('whatsapp_templates').select('*').order('name');
+    WA_TEMPLATES = templates || [];
+    const orders = await getOrdersForAdmin();
+    const seen = new Set();
+    WA_CUSTOMER_CONTACTS = [];
+    orders.forEach(o => {
+      if(o.customerPhone && !seen.has(o.customerPhone)){
+        seen.add(o.customerPhone);
+        WA_CUSTOMER_CONTACTS.push({ name: o.customerName || 'Client', phone: o.customerPhone });
+      }
+    });
+    renderAdminWhatsappShell();
   }catch(e){
-    el.innerHTML = `<p class="card-sub">Erreur de chargement des messages.</p>`;
+    el.innerHTML = `<p class="card-sub">Erreur de chargement.</p>`;
     console.error(e);
   }
 }
-function renderAdminChatList(){
-  const el = document.getElementById('adminTab-chat');
+function renderAdminWhatsappShell(){
+  const el = document.getElementById('adminTab-whatsapp');
   el.innerHTML = `
-    <h3>Messages des visiteurs</h3>
-    ${ADMIN_CHAT_CONVERSATIONS.length ? ADMIN_CHAT_CONVERSATIONS.map(c => `
-      <div class="admin-item-card">
-        <div class="admin-item-summary" onclick="openAdminChatThread('${c.id}')">
-          <span>${escapeHtml(c.visitor_name || 'Visiteur anonyme')}${c.admin_unread ? ' <span class="stock-flag" style="position:static; background:var(--coral);">Nouveau</span>' : ''}</span>
-          <span class="admin-item-price" style="font-weight:400; font-size:.78rem;">${new Date(c.last_message_at).toLocaleString('fr-FR')}</span>
-        </div>
-        <div id="chat-thread-${c.id}" style="display:none; padding:14px; border-top:1px solid var(--line);"></div>
-      </div>
-    `).join('') : '<p class="card-sub">Aucun message pour le moment.</p>'}
+    <h3>WhatsApp marketing</h3>
+    <div class="admin-note">
+      WhatsApp interdit d'écrire librement à quelqu'un qui ne vous a pas contacté depuis moins de 24h — seuls des <strong>modèles de message déjà approuvés par WhatsApp</strong> peuvent être envoyés ici. Les modèles se créent et s'approuvent sur <a href="https://console.twilio.com/" target="_blank" rel="noopener">console.twilio.com</a> (Content Template Builder), puis s'enregistrent dans l'onglet "Modèles" ci-dessous.
+    </div>
+    <div style="display:flex; gap:6px; margin:12px 0; flex-wrap:wrap;">
+      <button class="opt-btn ${WA_SUBTAB==='contacts'?'selected':''}" onclick="switchWaSubtab('contacts')">Contacts</button>
+      <button class="opt-btn ${WA_SUBTAB==='templates'?'selected':''}" onclick="switchWaSubtab('templates')">Modèles</button>
+      <button class="opt-btn ${WA_SUBTAB==='send'?'selected':''}" onclick="switchWaSubtab('send')">Envoyer</button>
+      <button class="opt-btn ${WA_SUBTAB==='log'?'selected':''}" onclick="switchWaSubtab('log')">Historique</button>
+    </div>
+    <div id="waSubtabBody"></div>
   `;
+  renderWaSubtabBody();
 }
-async function openAdminChatThread(id){
-  const threadEl = document.getElementById('chat-thread-'+id);
-  if(!threadEl) return;
-  const isOpen = threadEl.style.display !== 'none';
-  if(isOpen){ threadEl.style.display = 'none'; return; }
-  threadEl.style.display = 'block';
-  const conv = ADMIN_CHAT_CONVERSATIONS.find(c => c.id === id);
-  if(conv && conv.admin_unread){
-    conv.admin_unread = false;
-    db.from('chat_conversations').update({ admin_unread:false }).eq('id', id).then(()=>{}, ()=>{});
-  }
-  await refreshAdminChatThread(id);
-}
-async function refreshAdminChatThread(id){
-  const threadEl = document.getElementById('chat-thread-'+id);
-  if(!threadEl) return;
-  threadEl.innerHTML = `<p class="card-sub">Chargement…</p>`;
-  try{
-    const { data: messages, error } = await db.from('chat_messages').select('*').eq('conversation_id', id).order('created_at', { ascending:true });
-    if(error) throw error;
-    const withLinks = await Promise.all((messages||[]).map(async m => {
-      if(!m.file_url) return m;
-      try{
-        const { data: signed } = await db.storage.from('chat-uploads').createSignedUrl(m.file_url, 3600);
-        return { ...m, signedUrl: signed ? signed.signedUrl : null };
-      }catch(e){ return { ...m, signedUrl: null }; }
-    }));
-    threadEl.innerHTML = `
-      <div class="chat-messages" style="max-height:260px; min-height:auto;">
-        ${withLinks.map(m => `
-          <div class="chat-msg chat-msg-${m.sender}">
-            ${m.body ? `<div class="chat-msg-text">${escapeHtml(m.body)}</div>` : ''}
-            ${m.signedUrl ? `<div class="chat-msg-text"><a href="${m.signedUrl}" target="_blank" rel="noopener">📎 ${escapeHtml(m.file_name || 'Fichier')}</a></div>` : (m.file_url ? '<div class="chat-msg-text">📎 Fichier (lien expiré, rouvrez la conversation)</div>' : '')}
-          </div>
-        `).join('') || '<p class="card-sub">Aucun message.</p>'}
-      </div>
-      <div class="form-field" style="margin-top:10px;"><textarea id="chat-reply-${id}" rows="2" placeholder="Votre réponse…"></textarea></div>
-      <button class="btn btn-primary" onclick="sendAdminChatReply('${id}')">Envoyer</button>
-    `;
-  }catch(e){
-    threadEl.innerHTML = `<p class="card-sub">Erreur de chargement.</p>`;
-    console.error(e);
-  }
-}
-async function sendAdminChatReply(id){
-  const textarea = document.getElementById('chat-reply-'+id);
-  const text = textarea.value.trim();
-  if(!text) return;
-  try{
-    const { error } = await db.from('chat_messages').insert({ conversation_id:id, sender:'admin', body:text });
-    if(error) throw error;
-    await db.from('chat_conversations').update({ last_message_at: new Date().toISOString() }).eq('id', id);
-    await refreshAdminChatThread(id);
-  }catch(e){
-    showToast("Échec de l'envoi de la réponse");
-    console.error(e);
-  }
+function switchWaSubtab(name){ WA_SUBTAB = name; renderAdminWhatsappShell(); }
+function renderWaSubtabBody(){
+  const body = document.getElementById('waSubtabBody');
+  if(WA_SUBTAB === 'contacts') return renderWaContacts(body);
+  if(WA_SUBTAB === 'templates') return renderWaTemplates(body);
+  if(WA_SUBTAB === 'send') return renderWaSend(body);
+  if(WA_SUBTAB === 'log') return renderWaLog(body);
 }
 
+/* ---- Contacts ---- */
+function renderWaContacts(body){
+  const allContacts = [...WA_CUSTOMER_CONTACTS.map(c=>({...c, source:'client'})), ...WA_MANUAL_CONTACTS.map(c=>({...c, source:'manuel'}))];
+  body.innerHTML = `
+    <div class="admin-note">${WA_SELECTED.size} contact${WA_SELECTED.size>1?'s':''} sélectionné${WA_SELECTED.size>1?'s':''} pour l'envoi.</div>
+    <button class="btn btn-ghost" style="margin:8px 0;" onclick="waSelectAll()">Tout sélectionner</button>
+    <button class="btn btn-ghost" style="margin:8px 0 8px 6px;" onclick="waSelectNone()">Tout désélectionner</button>
+    <h4 style="margin-top:14px;">Ajouter un contact manuel</h4>
+    <div class="form-field"><label>Nom</label><input type="text" id="waNewContactName" placeholder="Nom"></div>
+    <div class="form-field"><label>Téléphone (format international, ex: +50934432139)</label><input type="text" id="waNewContactPhone" placeholder="+509..."></div>
+    <button class="btn btn-primary" onclick="waAddContact()">+ Ajouter</button>
+    <h4 style="margin-top:18px;">Tous les contacts (${allContacts.length})</h4>
+    ${allContacts.length ? allContacts.map(c => `
+      <label class="check-row">
+        <input type="checkbox" class="wa-contact-cb" value="${escapeHtml(c.phone)}" ${WA_SELECTED.has(c.phone)?'checked':''} onchange="waToggleContact('${escapeHtml(c.phone)}','${escapeHtml(c.name).replace(/'/g,"\\'")}', this.checked)">
+        ${escapeHtml(c.name)} — ${escapeHtml(c.phone)} <span class="card-sub">(${c.source})</span>
+        ${c.source==='manuel' ? `<button type="button" class="ci-remove" style="margin-left:8px;" onclick="event.preventDefault(); waDeleteContact(${c.id})">✕</button>` : ''}
+      </label>
+    `).join('') : '<p class="card-sub">Aucun contact pour le moment.</p>'}
+  `;
+}
+function waToggleContact(phone, name, checked){
+  if(checked) WA_SELECTED.add(phone); else WA_SELECTED.delete(phone);
+  const noteEl = document.querySelector('#waSubtabBody .admin-note');
+  if(noteEl) noteEl.textContent = `${WA_SELECTED.size} contact${WA_SELECTED.size>1?'s':''} sélectionné${WA_SELECTED.size>1?'s':''} pour l'envoi.`;
+}
+function waSelectAll(){
+  [...WA_CUSTOMER_CONTACTS, ...WA_MANUAL_CONTACTS].forEach(c => WA_SELECTED.add(c.phone));
+  renderWaContacts(document.getElementById('waSubtabBody'));
+}
+function waSelectNone(){ WA_SELECTED.clear(); renderWaContacts(document.getElementById('waSubtabBody')); }
+async function waAddContact(){
+  const name = document.getElementById('waNewContactName').value.trim();
+  const phone = document.getElementById('waNewContactPhone').value.trim();
+  if(!name || !phone){ showToast("Nom et téléphone requis"); return; }
+  if(!phone.startsWith('+')){ showToast("Le téléphone doit commencer par + et l'indicatif pays (ex: +509)"); return; }
+  try{
+    const { error } = await db.from('whatsapp_contacts').insert({ name, phone });
+    if(error) throw error;
+    showToast("Contact ajouté");
+    await renderAdminWhatsapp();
+  }catch(e){
+    showToast("Échec de l'ajout");
+    console.error(e);
+  }
+}
+async function waDeleteContact(id){
+  try{
+    await db.from('whatsapp_contacts').delete().eq('id', id);
+    await renderAdminWhatsapp();
+  }catch(e){ showToast("Échec de la suppression"); }
+}
+
+/* ---- Modèles ---- */
+function renderWaTemplates(body){
+  body.innerHTML = `
+    <div class="admin-note">Le modèle doit déjà être <strong>approuvé</strong> sur Twilio avant de l'ajouter ici — copiez son identifiant "ContentSid" (commence par "HX...") depuis la console Twilio.</div>
+    <div class="form-field"><label>Nom (repère interne)</label><input type="text" id="waTplName" placeholder="Ex : Promo du mois"></div>
+    <div class="form-field"><label>ContentSid Twilio</label><input type="text" id="waTplSid" placeholder="HX..."></div>
+    <div class="form-field"><label>Variables du modèle, dans l'ordre, séparées par des virgules</label><input type="text" id="waTplVars" placeholder="Ex : Nom, Offre, Date"></div>
+    <button class="btn btn-primary" onclick="waAddTemplate()">+ Enregistrer ce modèle</button>
+    <h4 style="margin-top:18px;">Modèles enregistrés</h4>
+    ${WA_TEMPLATES.length ? WA_TEMPLATES.map(t => `
+      <div class="admin-item-card">
+        <div class="admin-item-summary" style="cursor:default;">
+          <span>${escapeHtml(t.name)} <span class="item-code-tag">${escapeHtml(t.content_sid)}</span></span>
+          <button class="ci-remove" onclick="waDeleteTemplate(${t.id})">✕</button>
+        </div>
+        <div style="padding:10px 14px;" class="card-sub">Variables : ${(t.variable_labels||[]).map((v,i)=>`{{${i+1}}} = ${escapeHtml(v)}`).join(', ') || 'aucune'}</div>
+      </div>
+    `).join('') : '<p class="card-sub">Aucun modèle enregistré.</p>'}
+  `;
+}
+async function waAddTemplate(){
+  const name = document.getElementById('waTplName').value.trim();
+  const sid = document.getElementById('waTplSid').value.trim();
+  const varsRaw = document.getElementById('waTplVars').value.trim();
+  if(!name || !sid){ showToast("Nom et ContentSid requis"); return; }
+  if(!sid.startsWith('HX')){ showToast("Le ContentSid Twilio commence toujours par \"HX\""); return; }
+  const variable_labels = varsRaw ? varsRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  try{
+    const { error } = await db.from('whatsapp_templates').insert({ name, content_sid: sid, variable_labels });
+    if(error) throw error;
+    showToast("Modèle enregistré");
+    await renderAdminWhatsapp();
+  }catch(e){
+    showToast("Échec — ce ContentSid est peut-être déjà enregistré");
+    console.error(e);
+  }
+}
+async function waDeleteTemplate(id){
+  showConfirmModal("Retirer ce modèle de la liste ? (Ne le supprime pas de Twilio, juste d'ici.)", async () => {
+    try{
+      await db.from('whatsapp_templates').delete().eq('id', id);
+      await renderAdminWhatsapp();
+    }catch(e){ showToast("Échec de la suppression"); }
+  });
+}
+
+/* ---- Envoyer ---- */
+function renderWaSend(body){
+  if(!WA_TEMPLATES.length){
+    body.innerHTML = `<p class="card-sub">Enregistrez d'abord un modèle dans l'onglet "Modèles".</p>`;
+    return;
+  }
+  if(!WA_SELECTED.size){
+    body.innerHTML = `<p class="card-sub">Sélectionnez d'abord des contacts dans l'onglet "Contacts".</p>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="form-field"><label>Modèle</label>
+      <select id="waSendTemplate" onchange="renderWaSendVariables()">
+        ${WA_TEMPLATES.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="waSendVariables"></div>
+    <div class="admin-note" style="margin-top:10px;">Envoi à <strong>${WA_SELECTED.size}</strong> contact${WA_SELECTED.size>1?'s':''}. Chaque envoi a un coût réel chez Twilio.</div>
+    <button class="btn btn-primary" id="waSendBtn" onclick="waSendCampaign()">Envoyer maintenant</button>
+    <div id="waSendResult" style="margin-top:12px;"></div>
+  `;
+  renderWaSendVariables();
+}
+function renderWaSendVariables(){
+  const tplId = Number(document.getElementById('waSendTemplate').value);
+  const tpl = WA_TEMPLATES.find(t => t.id === tplId);
+  const el = document.getElementById('waSendVariables');
+  if(!tpl || !el) return;
+  el.innerHTML = (tpl.variable_labels||[]).map((label, i) => `
+    <div class="form-field">
+      <label>{{${i+1}}} — ${escapeHtml(label)}</label>
+      ${i===0 ? `
+        <label class="check-row"><input type="checkbox" id="waVarUseName-${i+1}" checked onchange="document.getElementById('waVarShared-${i+1}').disabled = this.checked;"> Utiliser le nom de chaque contact automatiquement</label>
+      ` : ''}
+      <input type="text" id="waVarShared-${i+1}" placeholder="Valeur pour tous les destinataires" ${i===0?'disabled':''}>
+    </div>
+  `).join('') || '<p class="card-sub">Ce modèle n\'a aucune variable.</p>';
+}
+async function waSendCampaign(){
+  const btn = document.getElementById('waSendBtn');
+  const resultEl = document.getElementById('waSendResult');
+  const tplId = Number(document.getElementById('waSendTemplate').value);
+  const tpl = WA_TEMPLATES.find(t => t.id === tplId);
+  if(!tpl) return;
+
+  const allContacts = [...WA_CUSTOMER_CONTACTS, ...WA_MANUAL_CONTACTS];
+  const recipients = [...WA_SELECTED].map(phone => {
+    const contact = allContacts.find(c => c.phone === phone) || { name: '', phone };
+    const variables = {};
+    (tpl.variable_labels||[]).forEach((label, i) => {
+      const idx = i + 1;
+      const useName = i === 0 && document.getElementById(`waVarUseName-${idx}`)?.checked;
+      variables[idx] = useName ? contact.name : (document.getElementById(`waVarShared-${idx}`)?.value || '');
+    });
+    return { name: contact.name, phone: contact.phone, variables };
+  });
+
+  btn.disabled = true; btn.textContent = 'Envoi en cours…';
+  resultEl.innerHTML = `<p class="card-sub">Envoi à ${recipients.length} contacts, merci de patienter…</p>`;
+  try{
+    const { data: sessionData } = await db.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    const resp = await fetch(SEND_WHATSAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ contentSid: tpl.content_sid, templateId: tpl.id, recipients })
+    });
+    const data = await resp.json();
+    if(!data.status){
+      resultEl.innerHTML = `<p class="card-sub">Échec : ${escapeHtml(data.message || 'erreur inconnue')}${data.message==='twilio_not_configured' ? ' — les identifiants Twilio ne sont pas encore configurés (voir Réglages).' : ''}</p>`;
+    } else {
+      resultEl.innerHTML = `<p class="card-sub">✅ ${data.sent} envoyé(s), ${data.failed} échec(s).</p>` +
+        (data.failed ? '<ul class="admin-list">' + data.results.filter(r=>r.status==='failed').map(r=>`<li>${escapeHtml(r.phone)} — ${escapeHtml(r.error||'erreur')}</li>`).join('') + '</ul>' : '');
+    }
+  }catch(e){
+    resultEl.innerHTML = `<p class="card-sub">Échec de l'envoi — réessayez.</p>`;
+    console.error(e);
+  }
+  btn.disabled = false; btn.textContent = 'Envoyer maintenant';
+}
+
+/* ---- Historique ---- */
+async function renderWaLog(body){
+  body.innerHTML = `<p class="card-sub">Chargement…</p>`;
+  try{
+    const { data, error } = await db.from('whatsapp_sends').select('*').order('created_at', { ascending:false }).limit(100);
+    if(error) throw error;
+    body.innerHTML = (data||[]).length ? '<ul class="admin-list">' + data.map(s => `
+      <li>${s.status==='sent'?'✅':'❌'} ${escapeHtml(s.recipient_name||'')} — ${escapeHtml(s.recipient_phone)} — ${new Date(s.created_at).toLocaleString('fr-FR')}${s.error_message ? ` — ${escapeHtml(s.error_message)}` : ''}</li>
+    `).join('') + '</ul>' : '<p class="card-sub">Aucun envoi pour le moment.</p>';
+  }catch(e){
+    body.innerHTML = '<p class="card-sub">Erreur de chargement.</p>';
+  }
+}
 /* ---- Avis (modération) ---- */
 async function renderAdminReviews(){
   const el = document.getElementById('adminTab-reviews');
@@ -3153,12 +3301,74 @@ function renderDashboardContent(){
       <div class="admin-stat-card"><div class="stat-num">${totalVisits}</div><div class="stat-label">Visites du site</div></div>
       <div class="admin-stat-card"><div class="stat-num">${CATALOG.products.length + CATALOG.services.length}</div><div class="stat-label">Articles au catalogue</div></div>
     </div>
+    ${dashboardCashSectionHTML(confirmedOrders)}
     <h3>Articles les plus commandés</h3>
     ${topItems.length ? '<ul class="admin-list">' + topItems.map(([n,q])=>`<li>${escapeHtml(n)} — ${q}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune commande sur cette période.</p>'}
     <h3>Produits et services les plus consultés</h3>
     <div class="admin-note">Compte chaque visite d'une fiche produit/service, même sans commande.</div>
     ${topViewed.length ? '<ul class="admin-list">' + topViewed.map(x=>`<li>${escapeHtml(x.item.name)} — ${x.count} consultation${x.count>1?'s':''}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune consultation enregistrée sur cette période.</p>'}
   `;
+}
+/* ---- Encaissements : en ligne (PLOP PLOP) vs confirmés à la main ----
+   payments.confirmation est rempli automatiquement par la base :
+   'en_ligne' quand le webhook confirme, 'manuel' quand l'admin
+   passe le paiement à « Confirmé ». Les anciens paiements (avant
+   cette colonne) sont « à classer » et se corrigent ici. */
+function dashboardCashSectionHTML(confirmedOrders){
+  const groups = { en_ligne: [], manuel: [], aucun: [] };
+  confirmedOrders.forEach(o => {
+    const c = o.paymentRecord && o.paymentRecord.confirmation;
+    (groups[c] || groups.aucun).push(o);
+  });
+  const sum = list => list.reduce((s,o) => s + (o.total||0), 0);
+  const card = (num, label, sub) => `<div class="admin-stat-card"><div class="stat-num">${num}</div><div class="stat-label">${label}</div>${sub ? `<div class="card-sub" style="margin-top:2px;">${sub}</div>` : ''}</div>`;
+  const plural = (n) => `${n} paiement${n>1?'s':''}`;
+  const badge = (c) => c === 'en_ligne'
+    ? `<span class="cash-badge cash-online">En ligne</span>`
+    : c === 'manuel' ? `<span class="cash-badge cash-manual">À la main</span>` : `<span class="cash-badge cash-none">À classer</span>`;
+  const rows = [...confirmedOrders].sort((a,b) => b.date - a.date).map(o => {
+    const p = o.paymentRecord;
+    const c = p.confirmation || null;
+    return `<div class="cash-row">
+      <div class="cash-row-main">
+        <strong>${escapeHtml(o.code || '—')}</strong> ${badge(c)}
+        <div class="card-sub">${escapeHtml(o.customerName || 'Client')} · ${escapeHtml(p.method || '')} · ${new Date(o.date).toLocaleDateString('fr-FR')}</div>
+      </div>
+      <div class="cash-row-side">
+        <strong class="mono">${formatHTG(o.total||0)}</strong>
+        <div class="cash-switch">
+          <button class="opt-btn ${c==='en_ligne'?'selected':''}" onclick="dashSetConfirmation(${Number(p.id)}, 'en_ligne')">En ligne</button>
+          <button class="opt-btn ${c==='manuel'?'selected':''}" onclick="dashSetConfirmation(${Number(p.id)}, 'manuel')">À la main</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+    <h3>Encaissements</h3>
+    <div class="admin-note">« En ligne » = payé sur le site par MonCash/Natcash et confirmé automatiquement. « À la main » = paiement que tu as passé toi-même à « Confirmé ». Tu peux corriger le classement de chaque paiement ci-dessous.</div>
+    <div class="admin-stat-grid">
+      ${card(formatHTG(sum(groups.en_ligne)), 'Encaissé en ligne (site)', plural(groups.en_ligne.length))}
+      ${card(formatHTG(sum(groups.manuel)), 'Confirmé à la main', plural(groups.manuel.length))}
+      ${groups.aucun.length ? card(formatHTG(sum(groups.aucun)), 'À classer', plural(groups.aucun.length) + ' d\'avant ce suivi') : ''}
+    </div>
+    ${confirmedOrders.length
+      ? `<details class="recu-details" ${groups.aucun.length ? 'open' : ''}><summary>Détail des paiements confirmés (${confirmedOrders.length})</summary>${rows}</details>`
+      : '<p class="card-sub">Aucun paiement confirmé sur cette période.</p>'}
+  `;
+}
+async function dashSetConfirmation(paymentId, value){
+  try{
+    const { error } = await db.from('payments').update({ confirmation: value, updated_at: new Date().toISOString() }).eq('id', paymentId);
+    if(error) throw error;
+    (ADMIN_DASHBOARD_ORDERS_CACHE || []).forEach(o => {
+      if(o.paymentRecord && Number(o.paymentRecord.id) === Number(paymentId)) o.paymentRecord.confirmation = value;
+    });
+    renderDashboardContent();
+    showToast(value === 'en_ligne' ? 'Classé : encaissé en ligne' : 'Classé : confirmé à la main');
+  }catch(e){
+    console.error('dashSetConfirmation:', e);
+    showToast('Échec — réessayez.');
+  }
 }
 function toggleDashboardCustomRange(){
   ADMIN_DASHBOARD_PERIOD = 'custom';
@@ -3245,14 +3455,6 @@ function adminItemRowHTML(kind, item, idx, total){
           Calcul au pied carré (le client indique largeur × longueur en pouces, prix calculé automatiquement)
         </label>
       </div>
-      <div class="form-field">
-        <label>Devise de saisie du prix</label>
-        <div style="display:flex; gap:6px;">
-          <button type="button" class="opt-btn" id="unitbtn-usd-${item.id}" onclick="setPriceUnit('${item.id}','USD')">$ Dollars</button>
-          <button type="button" class="opt-btn selected" id="unitbtn-htg-${item.id}" onclick="setPriceUnit('${item.id}','HTG')">Gourdes (HTG)</button>
-        </div>
-        <input type="hidden" id="f-priceunit-${item.id}" value="HTG">
-      </div>
       <div id="f-dimprice-wrap-${item.id}" style="display:${item.isDimensionBased?'block':'none'};">
         <div class="form-field"><label id="f-pricesqft-label-${item.id}">Prix par pied carré (HTG/pi²)</label><input type="number" step="0.01" min="0" id="f-pricesqft-${item.id}" value="${item.pricePerSqft ?? 0}"></div>
       </div>
@@ -3283,41 +3485,6 @@ function adminItemRowHTML(kind, item, idx, total){
       </div>
     </div>
   </div>`;
-}
-function setPriceUnit(id, unit){
-  const hidden = document.getElementById('f-priceunit-'+id);
-  if(!hidden || hidden.value === unit) return;
-  const previousUnit = hidden.value;
-  hidden.value = unit;
-  const usdBtn = document.getElementById('unitbtn-usd-'+id);
-  const htgBtn = document.getElementById('unitbtn-htg-'+id);
-  if(usdBtn) usdBtn.classList.toggle('selected', unit === 'USD');
-  if(htgBtn) htgBtn.classList.toggle('selected', unit === 'HTG');
-
-  const rate = SETTINGS.exchangeRate || 1;
-  ['f-price-'+id, 'f-oldprice-'+id, 'f-pricesqft-'+id].forEach(fieldId => {
-    const el = document.getElementById(fieldId);
-    if(!el || el.value === '') return;
-    const v = parseFloat(el.value);
-    if(isNaN(v)) return;
-    // Convertit la valeur actuellement affichée (dans l'ancienne devise)
-    // vers la nouvelle devise choisie — jamais la valeur stockée en base,
-    // qui reste toujours en gourdes tant que "Enregistrer" n'a pas été cliqué.
-    if(previousUnit === 'USD' && unit === 'HTG'){
-      el.value = Math.round(v * rate);
-    } else if(previousUnit === 'HTG' && unit === 'USD'){
-      el.value = Math.round((v / rate) * 100) / 100;
-    }
-  });
-
-  const unitLabel = unit === 'HTG' ? 'HTG' : '$';
-  const perSqftLabel = unit === 'HTG' ? 'HTG/pi²' : '$/pi²';
-  const priceLabelEl = document.getElementById('f-price-label-'+id);
-  if(priceLabelEl) priceLabelEl.textContent = priceLabelEl.textContent.replace(/\(\$|\(HTG/, '(' + unitLabel);
-  const oldPriceLabelEl = document.getElementById('f-oldprice-label-'+id);
-  if(oldPriceLabelEl) oldPriceLabelEl.textContent = oldPriceLabelEl.textContent.replace(/\(\$|\(HTG/, '(' + unitLabel);
-  const sqftLabelEl = document.getElementById('f-pricesqft-label-'+id);
-  if(sqftLabelEl) sqftLabelEl.textContent = sqftLabelEl.textContent.replace(/\$\/pi²|HTG\/pi²/, perSqftLabel);
 }
 function toggleDimensionPricing(id){
   const checked = document.getElementById('f-dimbased-'+id).checked;
@@ -3371,13 +3538,9 @@ async function adminSaveItem(kind, id){
     item.slug = candidate;
   }
   const desc = document.getElementById('f-desc-'+id).value.trim();
-  const priceUnitEl = document.getElementById('f-priceunit-'+id);
-  const priceUnit = priceUnitEl ? priceUnitEl.value : 'HTG';
-  // Les prix sont désormais stockés en gourdes (HTG), la monnaie de
-  // référence du site. Si l'admin a saisi en dollars, on convertit
-  // vers les gourdes avant l'enregistrement ; sinon, la valeur tapée
-  // est déjà la bonne, aucune conversion nécessaire.
-  const toHTG = (v) => priceUnit === 'USD' ? Math.round(v * (SETTINGS.exchangeRate || 1) * 100) / 100 : v;
+  // Les prix se saisissent et se stockent uniquement en gourdes (HTG).
+  // Le dollar n'est qu'un affichage calculé avec le taux de change.
+  const toHTG = (v) => Math.round(v * 100) / 100;
   if(kind === 'services'){
     item.description = desc;
     item.startingPrice = toHTG(parseFloat(document.getElementById('f-price-'+id).value) || 0);
@@ -3502,7 +3665,9 @@ async function getOrdersForAdmin(){
         delivery: row.delivery,
         details: row.details,
         paymentRecord: paymentsByOrder[row.id] || null,
-        uploadCount: uploadCountByOrder[row.id] || 0
+        uploadCount: uploadCountByOrder[row.id] || 0,
+        payToken: row.pay_token || null,
+        source: row.source || null
       }));
     }catch(e){
       console.warn('Supabase orders fetch failed, falling back to local log:', e);
@@ -3659,12 +3824,15 @@ async function renderAdminOrders(){
     : "Supabase n'est pas configuré : liste des commandes envoyées via WhatsApp depuis <strong>cet appareil</strong> uniquement.";
   el.innerHTML = `
     <div class="admin-note">${note}</div>
+    <div id="payLinkAdmin"></div>
     <div class="modal-actions" style="margin-bottom:16px;">
+      ${SUPABASE_ENABLED ? `<button class="btn btn-primary" onclick="payLinkOpenForm()">+ Commande WhatsApp (lien de paiement)</button>` : ''}
       <button class="btn btn-ghost" onclick="exportOrdersCSV()">Exporter en CSV</button>
       <button class="btn btn-ghost" onclick="adminClearOrders()">Vider l'historique</button>
     </div>
     ${orders.length === 0 ? '<p class="card-sub">Aucune commande enregistrée.</p>' : orders.map(orderRowHTML).join('')}
   `;
+  if(typeof recuDecorateOrderButtons === 'function') recuDecorateOrderButtons();
 }
 const ORDER_STATUSES = [
   'En attente','Confirmée','Paiement en attente','Paiement confirmé',
@@ -3698,6 +3866,8 @@ function orderRowHTML(o){
       <button class="btn btn-ghost" style="margin-top:10px;" onclick="adminViewOrderFiles(${o.id}, this)">📎 Voir les ${o.uploadCount} fichier${o.uploadCount>1?'s':''} joint${o.uploadCount>1?'s':''}</button>
       <div id="orderfiles-${o.id}" style="margin-top:10px;"></div>
     ` : ''}
+    ${(o.payToken && SUPABASE_ENABLED) ? `<button class="btn btn-ghost" style="margin-top:10px;" onclick="payLinkShare(${Number(o.id)})">🔗 Lien de paiement</button>` : ''}
+    ${(o.id && SUPABASE_ENABLED) ? `<button class="btn btn-wa recu-order-btn" style="margin-top:10px;" data-order-id="${Number(o.id)}" onclick="recuFromOrder(${Number(o.id)})">🧾 Faire le reçu</button>` : ''}
     <div class="form-field" style="margin-top:10px;"><label>Statut de la commande</label>${statusSelect}</div>
     ${paymentSelect ? `<div class="form-field"><label>Statut du paiement (${escapeHtml(o.payment) || '—'})</label>${paymentSelect}</div>` : `<div class="card-sub">Paiement : ${escapeHtml(o.payment) || '—'}</div>`}
   </div>`;
@@ -3778,8 +3948,9 @@ async function exportOrdersCSV(){
   orders.forEach(o => {
     const items = (o.items||[]).map(i => `${csvSafe(i.name)} x${Number(i.qty)||0}`).join(' | ');
     const rate = o.exchangeRate || SETTINGS.exchangeRate;
-    const htgTotal = Math.round((o.total||0) * rate);
-    csv += `"${new Date(o.date).toLocaleString('fr-FR')}","${csvSafe(o.customerName)}","${csvSafe(o.customerPhone)}","${csvSafe(o.customerAddress)}","${items}",${(o.total||0).toFixed(2)},${htgTotal},${rate},"${csvSafe(o.payment)}","${csvSafe(o.delivery)}"\n`;
+    const htgTotal = Number(o.total)||0;
+    const usdTotal = rate ? htgTotal / rate : 0;
+    csv += `"${new Date(o.date).toLocaleString('fr-FR')}","${csvSafe(o.customerName)}","${csvSafe(o.customerPhone)}","${csvSafe(o.customerAddress)}","${items}",${usdTotal.toFixed(2)},${htgTotal.toFixed(2)},${rate},"${csvSafe(o.payment)}","${csvSafe(o.delivery)}"\n`;
   });
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -3816,6 +3987,7 @@ function renderAdminSettings(){
     <div class="form-field">
       <label for="s-rate">Taux de change (gourdes HTG pour 1 USD)</label>
       <input type="number" step="0.01" min="0" id="s-rate" value="${SETTINGS.exchangeRate}">
+      <p class="card-sub" style="margin-top:4px;">Sert uniquement à afficher l'équivalent en dollars sur le site. Les prix en gourdes ne changent jamais.</p>
     </div>
     <div class="admin-note">Ce taux sert à convertir automatiquement tous les prix (produits et services) affichés en gourdes sur le site. Mettez-le à jour régulièrement pour rester proche du taux réel du marché.</div>
 
@@ -3956,6 +4128,7 @@ if(document.body.dataset.page && document.body.dataset.page !== 'article' && doc
   logPageView(document.body.dataset.page);
 }
 if(document.body.dataset.page === 'retour-paiement') initPaymentReturnPage();
+if(document.body.dataset.page === 'payer') initPayLinkPage();
 
 const emailField = document.getElementById('adminEmailField');
 if(emailField) emailField.style.display = SUPABASE_ENABLED ? 'block' : 'none';
