@@ -5,7 +5,7 @@
 // passent toujours directement par article.html, comme avant.
 const SUPABASE_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrd3JrbGJvcXNwa3p4dGx2bnpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxNzk5MzUsImV4cCI6MjEwNDc1NTkzNX0.dt3AQzMMwE02V5wyADCMQBcqL-8mNqKYIvcZOq8WuTw";
-const SITE_URL = "https://jc-multimedia.vercel.app";
+const SITE_URL = "https://www.jcmultimedia.online";
 const DEFAULT_IMAGE = `${SITE_URL}/og-image.png`;
 
 function esc(s){

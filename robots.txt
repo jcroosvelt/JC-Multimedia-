@@ -2,4 +2,5 @@ User-agent: *
 Allow: /
 Disallow: /admin
 
-Sitemap: https://jc-multimedia.vercel.app/sitemap.xml
+Sitemap: https://www.jcmultimedia.online/sitemap.xml
+Sitemap: https://www.jcmultimedia.online/sitemap-fiches.xml

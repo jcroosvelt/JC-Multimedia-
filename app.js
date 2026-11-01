@@ -608,7 +608,7 @@ function shuffleArray(arr){
   return copy;
 }
 function escapeHtml(s){
-  return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function renderSimpleContentInto(elId, rawText){
   const el = document.getElementById(elId);
@@ -1508,15 +1508,15 @@ function showStepCustomerInfo(){
     <h3>Vos coordonnées</h3>
     <div class="form-field">
       <label for="cfName">Nom complet *</label>
-      <input type="text" id="cfName" value="${orderFlow.customerName}" placeholder="Ex : Jean Baptiste" autocomplete="name">
+      <input type="text" id="cfName" value="${escapeHtml(orderFlow.customerName)}" placeholder="Ex : Jean Baptiste" autocomplete="name">
     </div>
     <div class="form-field">
       <label for="cfPhone">Téléphone *</label>
-      <input type="tel" id="cfPhone" value="${orderFlow.customerPhone}" placeholder="Ex : 3443 2139" autocomplete="tel">
+      <input type="tel" id="cfPhone" value="${escapeHtml(orderFlow.customerPhone)}" placeholder="Ex : 3443 2139" autocomplete="tel">
     </div>
     <div class="form-field">
       <label for="cfAddress">Adresse (si livraison)</label>
-      <input type="text" id="cfAddress" value="${orderFlow.customerAddress}" placeholder="Quartier, rue, repère…" autocomplete="street-address">
+      <input type="text" id="cfAddress" value="${escapeHtml(orderFlow.customerAddress)}" placeholder="Quartier, rue, repère…" autocomplete="street-address">
     </div>
     <p id="cfError" class="form-error" style="display:none;">Merci de renseigner votre nom et votre téléphone.</p>
     <div class="modal-actions">
@@ -1634,7 +1634,7 @@ function showStepServiceUploads(){
     </div>
     <div class="form-field">
       <label>Décrivez votre projet</label>
-      <textarea id="serviceDescription" rows="4" placeholder="Expliquez ce que vous souhaitez (couleur, taille, texte, style, délai…)">${orderFlow.details || ''}</textarea>
+      <textarea id="serviceDescription" rows="4" placeholder="Expliquez ce que vous souhaitez (couleur, taille, texte, style, délai…)">${escapeHtml(orderFlow.details || '')}</textarea>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="showStepCustomerInfo()">Retour</button>
@@ -1739,29 +1739,10 @@ async function retryPayment(method){
   const retryEl = document.getElementById('retryStatus');
   if(!summary){ if(retryEl) retryEl.textContent = "Détails de commande introuvables — contactez-nous directement."; return; }
   // Commande payée via un lien de paiement : on retourne simplement sur ce lien.
+  // Toute nouvelle tentative passe par la page /payer/<jeton> (montant relu en base).
   if(summary.payToken){ window.location.href = '/payer/' + encodeURIComponent(summary.payToken); return; }
-  if(retryEl) retryEl.textContent = "Préparation du paiement…";
-  try{
-    const newRef = `${summary.orderCode}-${Date.now()}`;
-    await db.from('payments').update({ reference: newRef }).eq('order_id', summary.orderId);
-    const resp = await fetch(CREATE_PAYMENT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reference: newRef, amount: summary.amountHTG, method })
-    });
-    const data = await resp.json();
-    if(!data || !data.status || !data.url){
-      if(retryEl) retryEl.textContent = "Échec — réessayez ou contactez-nous.";
-      return;
-    }
-    summary.reference = newRef;
-    safeSet(PAYMENT_SUMMARY_KEY, summary);
-    safeSet(LAST_PAYMENT_REF_KEY, newRef);
-    window.location.href = data.url;
-  }catch(e){
-    console.error('retryPayment error:', e);
-    if(retryEl) retryEl.textContent = "Erreur — réessayez ou contactez-nous.";
-  }
+  // Ancienne commande sans jeton : reprise par WhatsApp.
+  if(retryEl) retryEl.textContent = "Pour réessayer le paiement de cette commande, contactez-nous sur WhatsApp en indiquant votre code de commande.";
 }
 
 /* =========================================================
@@ -1891,7 +1872,7 @@ function showStepCustomizeList(){
     ${items.map(i => `
       <label class="check-row">
         <input type="checkbox" value="${i.id}" ${orderFlow.customizedItems.includes(i.id) ? 'checked':''}>
-        ${i.name}
+        ${escapeHtml(i.name)}
       </label>
     `).join('')}
     <div class="form-field" style="margin-top:14px;">
@@ -1926,7 +1907,7 @@ function showStepFiles(){
     <h3>Détails de votre commande</h3>
     <div class="form-field">
       <label for="cfDetails">${helperText}</label>
-      <textarea id="cfDetails" rows="4" placeholder="Expliquez ce que vous souhaitez…" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.92rem;">${orderFlow.details || ''}</textarea>
+      <textarea id="cfDetails" rows="4" placeholder="Expliquez ce que vous souhaitez…" style="width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-family:inherit; font-size:.92rem;">${escapeHtml(orderFlow.details || '')}</textarea>
     </div>
     <div class="form-field">
       <label>Joindre des fichiers (logo, photo, design…) — jusqu'à ${MAX_UPLOAD_FILES}, 5 Mo max chacun (images ou PDF), facultatif</label>
@@ -2006,34 +1987,27 @@ function showStepDelivery(){
 function selectDelivery(o){ orderFlow.delivery = o; showStepDelivery(); }
 
 const PAYMENT_SUMMARY_KEY = "jc_multimedia_payment_summary";
-const CREATE_PAYMENT_URL = "https://tkwrklboqspkzxtlvnzh.supabase.co/functions/v1/create-payment";
 
 async function handleRealPayment(){
   const btn = document.getElementById('paymentNextBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Préparation du paiement…'; }
   try{
     const method = orderFlow.payment === 'Natcash' ? 'natcash' : 'moncash';
-    const { orderId, orderCode, items, total } = await createOrderRecord();
+    const { orderId, orderCode, items, total, payToken } = await createOrderRecord();
 
-    if(!orderCode){
+    if(!orderCode || !payToken){
       showToast("Échec de la création de la commande. Réessayez.");
       if(btn){ btn.disabled = false; btn.textContent = 'Payer'; }
       return;
     }
 
-    const paymentRef = `${orderCode}-${Date.now()}`;
-    // Le total est déjà en gourdes (monnaie de référence du site) —
-    // aucune conversion supplémentaire n'est nécessaire ici.
-    const amountHTG = Math.max(20, Math.round(total));
-
-    // On enregistre la référence de cette tentative de paiement pour
-    // que le webhook puisse retrouver et confirmer le bon paiement.
-    await db.from('payments').update({ reference: paymentRef }).eq('order_id', orderId);
-
-    const resp = await fetch(CREATE_PAYMENT_URL, {
+    // Paiement via pay-link : le serveur relit le montant dans la base,
+    // enregistre la référence de cette tentative (pour la confirmation
+    // automatique par le webhook) et renvoie l'adresse de paiement.
+    const resp = await fetch(PAY_LINK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reference: paymentRef, amount: amountHTG, method })
+      body: JSON.stringify({ token: payToken, method })
     });
     const data = await resp.json();
 
@@ -2046,8 +2020,9 @@ async function handleRealPayment(){
     // Résumé conservé pour reconstruire le message WhatsApp de
     // confirmation une fois le client revenu sur le site, et pour
     // permettre une nouvelle tentative sans tout ressaisir.
+    const paymentRef = data.reference;
     safeSet(PAYMENT_SUMMARY_KEY, {
-      orderId, orderCode, reference: paymentRef, amountHTG, method,
+      orderId, orderCode, reference: paymentRef, amountHTG: data.amount, method, payToken,
       customerName: orderFlow.customerName, customerPhone: orderFlow.customerPhone,
       customerAddress: orderFlow.customerAddress, delivery: orderFlow.delivery,
       items: items.map(i => ({ name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name, qty: i.qty, code: i.code || null })),
@@ -2066,74 +2041,40 @@ async function handleRealPayment(){
   }
 }
 
-/* Crée la commande + ses lignes + son enregistrement de paiement dans
-   Supabase (parcours de paiement réel MonCash/NatCash).
-   paymentReference, si fourni, est la référence
-   unique envoyée à PLOP PLOP pour CETTE tentative de paiement — elle
-   sert ensuite au webhook à retrouver le bon paiement à confirmer. */
-async function createOrderRecord(paymentReference){
+/* Crée la commande dans Supabase via la fonction serveur
+   place_public_order : les prix sont RELUS dans le catalogue côté
+   serveur (promos et pied carré compris), jamais pris du navigateur.
+   La fonction crée aussi les lignes, le paiement « En attente » et un
+   jeton de paiement (pay_token) utilisé ensuite par pay-link. */
+async function createOrderRecord(){
   const items = cartEntries();
-  const total = cartTotal();
-  let orderCode = null, orderId = null;
+  let total = cartTotal();
+  let orderCode = null, orderId = null, payToken = null;
 
-  if(!SUPABASE_ENABLED) return { orderId, orderCode, items, total };
+  if(!SUPABASE_ENABLED) return { orderId, orderCode, items, total, payToken };
 
   try{
-    const { data, error } = await db.rpc('create_public_order', {
+    const lines = items.map(i => i.isCustomLine
+      ? { catalog_item_id: i.itemId, qty: i.qty, width_in: i.widthIn, height_in: i.heightIn,
+          customized: orderFlow.customizedItems.includes(i.id) }
+      : { catalog_item_id: i.id, qty: i.qty, customized: orderFlow.customizedItems.includes(i.id) });
+    const { data, error } = await db.rpc('place_public_order', {
       order_data: {
         customer_name: orderFlow.customerName,
         customer_phone: orderFlow.customerPhone,
         customer_address: orderFlow.customerAddress || null,
-        items: items.map(i => ({
-          name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
-          qty: i.qty,
-          kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
-          customized: orderFlow.customizedItems.includes(i.id)
-        })),
-        total: total,
-        exchange_rate: SETTINGS.exchangeRate,
         payment: orderFlow.payment,
         delivery: orderFlow.delivery,
         details: orderFlow.details || null,
-        idempotency_key: orderFlow.idempotencyKey
+        idempotency_key: orderFlow.idempotencyKey,
+        lines
       }
-    }).single();
+    });
     if(error) throw error;
     orderId = data.id;
     orderCode = data.code;
-
-    // Lignes de commande détaillées avec snapshot (prix, code, nom au
-    // moment de l'achat) — une modification future du catalogue ne
-    // change jamais l'historique de cette commande.
-    const lineRows = items.map(i => ({
-      order_id: orderId,
-      catalog_item_id: i.itemId || i.id,
-      kind: i.kind || (isEstimate(i) ? 'services' : 'products'),
-      code: i.code || null,
-      name: i.dimensionsLabel ? `${i.name} (${i.dimensionsLabel})` : i.name,
-      unit_price: unitPrice(i),
-      is_estimate: isEstimate(i),
-      quantity: i.qty,
-      customized: orderFlow.customizedItems.includes(i.id),
-      line_total: unitPrice(i) * i.qty
-    }));
-    if(lineRows.length){
-      const { error: itemsError } = await db.from('order_items').insert(lineRows);
-      if(itemsError) console.warn('order_items insert failed:', itemsError);
-    }
-
-    // Enregistrement du paiement — TOUJOURS "En attente" au départ.
-    // Choisir un mode de paiement ne veut jamais dire que l'argent a
-    // été reçu ; seul un vrai paiement confirmé (webhook) ou l'admin
-    // (paiement manuel) changent ce statut ensuite.
-    const { error: paymentError } = await db.from('payments').insert({
-      order_id: orderId,
-      method: orderFlow.payment,
-      amount: total,
-      status: 'En attente',
-      reference: paymentReference || null
-    });
-    if(paymentError) console.warn('payment insert failed:', paymentError);
+    payToken = data.pay_token;
+    total = Number(data.total) || 0;
 
     // Envoi des fichiers joints (logo, design…) — chemin de stockage
     // toujours généré ici, jamais le nom brut envoyé par le client ;
@@ -2142,7 +2083,8 @@ async function createOrderRecord(paymentReference){
     const modelFilesToUpload = (orderFlow.modelFiles || []).filter(Boolean).map(f => ({ file:f, label:'[Modèle] ' }));
     for(const { file, label } of [...modelFilesToUpload, ...filesToUpload]){
       try{
-        const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+        const parts = file.name.split('.');
+        const ext = ((parts.length > 1 ? parts.pop() : '') .toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,8)) || 'bin';
         const safePath = `${orderId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
         const { error: upErr } = await db.storage.from('order-uploads').upload(safePath, file);
         if(upErr) throw upErr;
@@ -2158,10 +2100,10 @@ async function createOrderRecord(paymentReference){
   }catch(e){
     // Si la clé d'idempotence existe déjà (double clic malgré la
     // protection du bouton), on ne recrée jamais une seconde commande.
-    console.warn('Supabase order insert failed, using local fallback only:', e);
+    console.warn('place_public_order failed:', e);
   }
 
-  return { orderId, orderCode, items, total };
+  return { orderId, orderCode, items, total, payToken };
 }
 
 /* =========================================================
@@ -2354,7 +2296,7 @@ function renderWaContacts(body){
     <h4 style="margin-top:18px;">Tous les contacts (${allContacts.length})</h4>
     ${allContacts.length ? allContacts.map(c => `
       <label class="check-row">
-        <input type="checkbox" class="wa-contact-cb" value="${escapeHtml(c.phone)}" ${WA_SELECTED.has(c.phone)?'checked':''} onchange="waToggleContact('${escapeHtml(c.phone)}','${escapeHtml(c.name).replace(/'/g,"\\'")}', this.checked)">
+        <input type="checkbox" class="wa-contact-cb" value="${escapeHtml(c.phone)}" data-phone="${escapeHtml(c.phone)}" ${WA_SELECTED.has(c.phone)?'checked':''} onchange="waToggleContact(this.dataset.phone, '', this.checked)">
         ${escapeHtml(c.name)} — ${escapeHtml(c.phone)} <span class="card-sub">(${c.source})</span>
         ${c.source==='manuel' ? `<button type="button" class="ci-remove" style="margin-left:8px;" onclick="event.preventDefault(); waDeleteContact(${c.id})">✕</button>` : ''}
       </label>
@@ -2797,7 +2739,7 @@ async function renderAdminFiles(){
           <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             ${url ? `<a href="${url}" target="_blank" rel="noopener">📎 ${escapeHtml(f.original_filename) || 'Fichier'}</a>` : `<span class="card-sub">Lien indisponible</span>`}
             <span class="card-sub">${Math.round((f.size_bytes||0)/1024)} Ko</span>
-            <button class="btn btn-ghost" style="margin-left:auto; padding:6px 12px; font-size:.8rem;" onclick="adminDeleteUpload(${f.id}, '${(f.storage_path||'').replace(/'/g,"\\'")}')">Supprimer</button>
+            <button class="btn btn-ghost" style="margin-left:auto; padding:6px 12px; font-size:.8rem;" data-path="${escapeHtml(f.storage_path||'')}" onclick="adminDeleteUpload(${Number(f.id)}, this.dataset.path)">Supprimer</button>
           </div>
         </div>
       `);
@@ -3472,7 +3414,7 @@ function adminItemRowHTML(kind, item, idx, total){
       ` : ''}
       <div class="form-field">
         <label>Adresse de cette page</label>
-        <input type="text" readonly value="https://jc-multimedia.vercel.app${itemUrlPath(item)}" onclick="this.select()">
+        <input type="text" readonly value="https://www.jcmultimedia.online${itemUrlPath(item)}" onclick="this.select()">
         <p class="card-sub" style="margin-top:4px;">Se met à jour automatiquement à partir du nom, à chaque enregistrement.</p>
       </div>
       <h3 style="margin:18px 0 4px; font-size:.95rem;">SEO de cette fiche (optionnel)</h3>
@@ -3885,7 +3827,7 @@ async function adminViewOrderFiles(orderId, btnEl){
     for(const f of files){
       const { data: signed, error: signErr } = await db.storage.from('order-uploads').createSignedUrl(f.storage_path, 3600);
       if(signErr){ console.warn(signErr); continue; }
-      links.push(`<li><a href="${signed.signedUrl}" target="_blank" rel="noopener">${f.original_filename || 'Fichier'}</a> <span class="card-sub">(${Math.round((f.size_bytes||0)/1024)} Ko, lien valable 1h)</span></li>`);
+      links.push(`<li><a href="${signed.signedUrl}" target="_blank" rel="noopener">${escapeHtml(f.original_filename || 'Fichier')}</a> <span class="card-sub">(${Math.round((f.size_bytes||0)/1024)} Ko, lien valable 1h)</span></li>`);
     }
     container.innerHTML = `<ul class="admin-list">${links.join('')}</ul>`;
   }catch(e){
@@ -3915,24 +3857,42 @@ async function adminUpdateOrderStatus(orderId, newStatus){
     console.error(e);
   }
 }
-async function adminClearOrders(){
+/* Suppression de TOUT l'historique : irréversible, donc on exige de
+   taper le mot SUPPRIMER (un simple appui ne suffit pas). */
+function adminClearOrders(){
   const msg = SUPABASE_ENABLED
-    ? "Effacer DÉFINITIVEMENT tout l'historique des commandes dans Supabase (pour tous les appareils) ?"
+    ? "Effacer DÉFINITIVEMENT toutes les commandes et leurs paiements dans Supabase (pour tous les appareils) ?"
     : "Effacer tout l'historique des commandes enregistrées sur cet appareil ?";
-  showConfirmModal(msg, async () => {
-    if(SUPABASE_ENABLED){
-      try{
-        const { error } = await db.from('orders').delete().neq('id', 0);
-        if(error) throw error;
-      }catch(e){
-        showToast("Échec de la suppression Supabase — vérifiez votre connexion.");
-        console.error(e);
-      }
+  openStep(`
+    <h3>${msg}</h3>
+    <p class="card-sub">Cette action est irréversible. Pour confirmer, tapez <strong>SUPPRIMER</strong> ci-dessous.</p>
+    <div class="form-field"><input type="text" id="clearOrdersConfirm" autocomplete="off" autocapitalize="characters" placeholder="SUPPRIMER"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeStep()">Annuler</button>
+      <button class="btn btn-primary" onclick="adminClearOrdersConfirmed()">Tout effacer</button>
+    </div>
+  `, "Confirmation");
+}
+async function adminClearOrdersConfirmed(){
+  const input = document.getElementById('clearOrdersConfirm');
+  if(!input || input.value.trim().toUpperCase() !== 'SUPPRIMER'){
+    showToast("Tapez SUPPRIMER pour confirmer");
+    return;
+  }
+  closeStep();
+  if(SUPABASE_ENABLED){
+    try{
+      const { error } = await db.from('orders').delete().neq('id', 0);
+      if(error) throw error;
+    }catch(e){
+      showToast("Échec de la suppression Supabase — vérifiez votre connexion.");
+      console.error(e);
+      return;
     }
-    saveOrdersLocal([]);
-    renderAdminOrders();
-    showToast("Historique vidé");
-  });
+  }
+  saveOrdersLocal([]);
+  renderAdminOrders();
+  showToast("Historique vidé");
 }
 async function exportOrdersCSV(){
   const orders = await getOrdersForAdmin();
