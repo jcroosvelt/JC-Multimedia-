@@ -84,6 +84,10 @@ function recuMoney(n, cur){
 }
 // Code du reçu, sur le modèle des codes de commande (JC-PRC…, JC-SRC…) : JC-REC1001, JC-REC1002…
 function recuNumberLabel(n){ return n ? 'JC-REC' + n : '—'; }
+// Code affiché d'un reçu : celui de la commande liée (JC-PRC…, JC-SRC…, JC-ORC…),
+// sinon le code JC-REC… pour un reçu fait sans commande.
+function recuCode(st){ return st.orderCode || (st.number ? recuNumberLabel(st.number) : null); }
+function recuRowCode(r){ return (r.orders && r.orders.code) || recuNumberLabel(r.number); }
 function recuFormatDate(str){
   if(!str) return '';
   const [y,m,d] = String(str).split('-');
@@ -143,9 +147,11 @@ function recuRenderShell(){
   const st = recuState;
   const cur = st.currency;
   const numberText = st.number
-    ? `Reçu ${recuNumberLabel(st.number)} — modification`
-    : `Nouveau reçu — code attribué automatiquement à l'enregistrement${recuNextNumberHint ? ` (prochain : ${recuNumberLabel(recuNextNumberHint)})` : ''}`;
-  const orderText = st.orderCode ? `<br>Lié à la commande <strong>${escapeHtml(st.orderCode)}</strong>` : '';
+    ? `Reçu <strong>${escapeHtml(recuCode(st))}</strong>${st.orderCode ? ' (même code que la commande)' : ''} — modification`
+    : st.orderCode
+      ? `Nouveau reçu — il portera le code de la commande : <strong>${escapeHtml(st.orderCode)}</strong>`
+      : `Nouveau reçu — code attribué automatiquement à l'enregistrement${recuNextNumberHint ? ` (prochain : ${recuNumberLabel(recuNextNumberHint)})` : ''}`;
+  const orderText = '';
   el.innerHTML = `
     <div class="recu-layout">
       <div class="recu-form">
@@ -201,10 +207,7 @@ function recuRenderShell(){
         </details>
 
         <div class="recu-actions">
-          <button class="btn btn-wa btn-block" id="recuShareBtn" onclick="recuSaveAndExport('share')">Enregistrer + partager l'image (WhatsApp)</button>
-          <button class="btn btn-primary btn-block" id="recuPdfBtn" onclick="recuSaveAndExport('pdf')">Enregistrer + partager en PDF (qualité maximale)</button>
-          <button class="btn btn-ghost btn-block" id="recuSaveBtn" onclick="recuSaveAndExport('download')">Enregistrer + télécharger le JPG (pleine résolution)</button>
-          <p class="card-sub" style="margin:2px 0 0;">Astuce : le PDF arrive sur WhatsApp sans aucune perte de qualité. Pour l'image, appuyez sur « HD » dans WhatsApp avant l'envoi si l'option s'affiche.</p>
+          <button class="btn btn-wa btn-block" id="recuShareBtn" onclick="recuSaveAndExport()">Enregistrer + envoyer le reçu</button>
           <button class="btn btn-ghost btn-block" onclick="recuNew()">Nouveau reçu</button>
         </div>
       </div>
@@ -330,7 +333,8 @@ function recuRenderHistory(){
     || (r.client_name || '').toLowerCase().includes(q)
     || (r.client_phone || '').toLowerCase().includes(q)
     || ((r.orders && r.orders.code) || '').toLowerCase().includes(q)
-    || recuNumberLabel(r.number).toLowerCase().includes(q));
+    || recuNumberLabel(r.number).toLowerCase().includes(q)
+    || recuRowCode(r).toLowerCase().includes(q));
   if(!rows.length){
     box.innerHTML = `<p class="card-sub">${recuHistory.length ? 'Aucun reçu ne correspond.' : 'Aucun reçu enregistré pour le moment.'}</p>`;
     return;
@@ -338,8 +342,8 @@ function recuRenderHistory(){
   box.innerHTML = rows.map(r => `
     <div class="admin-item-card recu-hist">
       <div class="recu-hist-main">
-        <strong>${recuNumberLabel(r.number)}</strong> — ${escapeHtml(r.client_name || '(sans nom)')}
-        <div class="card-sub">${escapeHtml(recuFormatDate(r.issued_on))} · ${escapeHtml(recuMoney(r.total, r.currency === '$' ? '$' : 'HTG'))}${r.orders && r.orders.code ? ` · commande ${escapeHtml(r.orders.code)}` : ''}</div>
+        <strong>${escapeHtml(recuRowCode(r))}</strong> — ${escapeHtml(r.client_name || '(sans nom)')}
+        <div class="card-sub">${escapeHtml(recuFormatDate(r.issued_on))} · ${escapeHtml(recuMoney(r.total, r.currency === '$' ? '$' : 'HTG'))}</div>
       </div>
       <div style="display:flex; gap:6px;">
         <button class="btn btn-ghost" onclick="recuOpen('${escapeHtml(String(r.id))}')">Ouvrir</button>
@@ -358,7 +362,7 @@ function recuOpen(id){
 async function recuDelete(id){
   const row = recuHistory.find(r => String(r.id) === String(id));
   if(!row) return;
-  if(!confirm(`Supprimer définitivement le reçu ${recuNumberLabel(row.number)} ?`)) return;
+  if(!confirm(`Supprimer définitivement le reçu ${recuRowCode(row)} ?`)) return;
   try{
     const { error } = await db.from('receipts').delete().eq('id', id);
     if(error) throw error;
@@ -373,14 +377,14 @@ async function recuDelete(id){
 }
 
 /* ---------- Enregistrement + export ---------- */
-async function recuSaveAndExport(mode){
+async function recuSaveAndExport(){
   recuReadForm();
   const st = recuState;
   if(!st.clientName){ showToast('Indiquez le nom du client'); return; }
   const items = st.items.filter(i => i.name.trim() || i.description.trim() || Number(i.price));
   if(!items.length){ showToast('Ajoutez au moins un article ou service'); return; }
 
-  const btn = document.getElementById(mode === 'share' ? 'recuShareBtn' : mode === 'pdf' ? 'recuPdfBtn' : 'recuSaveBtn');
+  const btn = document.getElementById('recuShareBtn');
   const label = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
   try{
@@ -412,6 +416,10 @@ async function recuSaveAndExport(mode){
       if(error) throw error;
       saved = data;
     }
+    // Garde le code de la commande liée même si la réponse ne l'inclut pas
+    if(st.orderId && st.orderCode && String(saved.order_id) === String(st.orderId) && !(saved.orders && saved.orders.code)){
+      saved = { ...saved, orders: { code: st.orderCode } };
+    }
     recuState = recuFromRow(saved);
     const idx = recuHistory.findIndex(r => String(r.id) === String(saved.id));
     if(idx >= 0) recuHistory[idx] = saved; else recuHistory.unshift(saved);
@@ -419,7 +427,7 @@ async function recuSaveAndExport(mode){
     recuNextNumberHint = Number(recuHistory[0].number) + 1;
     recuRenderShell();
     await recuWaitFontsThenDraw();
-    await recuExport(mode);
+    await recuExport();
   }catch(e){
     console.error('recuSaveAndExport:', e);
     showToast("Échec de l'enregistrement — vérifiez votre connexion.");
@@ -427,60 +435,16 @@ async function recuSaveAndExport(mode){
   }
 }
 
-/* ---------- Export : JPG (pleine résolution ou format WhatsApp) et PDF ----------
+/* ---------- Export de l'image du reçu ----------
    WhatsApp réduit toute photo à ~1600 px sur son plus grand côté puis la
-   recompresse. Pour l'image partagée, on dessine DIRECTEMENT le reçu à
-   1600 px (texte net, aucune réduction par WhatsApp) en qualité maximale.
-   Le PDF, lui, est envoyé par WhatsApp comme document : aucune compression. */
+   recompresse. On dessine donc DIRECTEMENT le reçu à 1600 px (texte net,
+   aucune réduction par WhatsApp), en qualité JPEG maximale. */
 const RECU_WHATSAPP_MAX_SIDE = 1600;
 
 function recuRenderBlob(maxSide, quality){
   const c = document.createElement('canvas');
   recuDraw({ canvas: c, maxSide });
   return new Promise(resolve => c.toBlob(b => resolve({ blob: b, width: c.width, height: c.height }), 'image/jpeg', quality));
-}
-
-// PDF d'une page contenant l'image JPEG (format A4 en largeur), sans bibliothèque
-async function recuBuildPdf(){
-  const { blob, width, height } = await recuRenderBlob(null, 0.95);
-  if(!blob) return null;
-  const jpg = new Uint8Array(await blob.arrayBuffer());
-  const pageW = 595.28, pageH = Math.round(pageW * height / width * 100) / 100;
-  const enc = new TextEncoder();
-  const parts = []; const offsets = []; let len = 0;
-  const push = (data) => { const u = typeof data === 'string' ? enc.encode(data) : data; parts.push(u); len += u.length; };
-  const obj = (n, body) => { offsets[n] = len; push(`${n} 0 obj\n${body}\nendobj\n`); };
-  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
-  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-  offsets[4] = len;
-  push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);
-  push(jpg);
-  push('\nendstream\nendobj\n');
-  const content = `q ${pageW} 0 0 ${pageH} 0 0 cm /Im0 Do Q`;
-  obj(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  const xrefPos = len;
-  let xref = 'xref\n0 6\n0000000000 65535 f \n';
-  for(let i = 1; i <= 5; i++) xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
-  push(xref + `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
-  return new Blob(parts, { type: 'application/pdf' });
-}
-
-async function recuShareOrDownload(blob, fileName, type){
-  const label = recuNumberLabel(recuState.number);
-  const file = new File([blob], fileName, { type });
-  if(navigator.canShare && navigator.canShare({ files:[file] })){
-    try{
-      await navigator.share({ files:[file], title: `Reçu ${label}` });
-      showToast('Reçu enregistré');
-      return;
-    }catch(e){
-      if(e && e.name === 'AbortError'){ showToast('Reçu enregistré (partage annulé)'); return; }
-    }
-  }
-  showToast("Partage non disponible ici : le fichier est téléchargé.");
-  recuDownload(blob, fileName);
 }
 function recuDownload(blob, fileName){
   const url = URL.createObjectURL(blob);
@@ -490,28 +454,27 @@ function recuDownload(blob, fileName){
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-async function recuExport(mode){
-  const base = `recu-${recuNumberLabel(recuState.number)}`;
+async function recuExport(){
+  const code = recuCode(recuState) || 'recu';
+  const fileName = `recu-${code}.jpg`;
   try{
-    if(mode === 'pdf'){
-      const pdf = await recuBuildPdf();
-      if(!pdf){ showToast("Impossible de créer le PDF"); return; }
-      await recuShareOrDownload(pdf, base + '.pdf', 'application/pdf');
-      return;
-    }
-    if(mode === 'share'){
-      const { blob } = await recuRenderBlob(RECU_WHATSAPP_MAX_SIDE, 1.0);
-      if(!blob){ showToast("Impossible de créer l'image"); return; }
-      await recuShareOrDownload(blob, base + '.jpg', 'image/jpeg');
-      return;
-    }
-    const { blob } = await recuRenderBlob(null, 0.96);
+    const { blob } = await recuRenderBlob(RECU_WHATSAPP_MAX_SIDE, 1.0);
     if(!blob){ showToast("Impossible de créer l'image"); return; }
-    recuDownload(blob, base + '.jpg');
-    showToast(`Reçu ${recuNumberLabel(recuState.number)} enregistré`);
+    const file = new File([blob], fileName, { type:'image/jpeg' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      try{
+        await navigator.share({ files:[file], title: `Reçu ${code}` });
+        showToast('Reçu enregistré');
+        return;
+      }catch(e){
+        if(e && e.name === 'AbortError'){ showToast('Reçu enregistré (envoi annulé)'); return; }
+      }
+    }
+    recuDownload(blob, fileName);
+    showToast(`Reçu ${code} enregistré (image téléchargée)`);
   }catch(e){
     console.error('recuExport:', e);
-    showToast("Impossible de créer le fichier du reçu");
+    showToast("Impossible de créer l'image du reçu");
   }
 }
 
@@ -545,7 +508,7 @@ function recuDraw(opts){
   const st = recuState;
   const W = 900;
   const cur = st.currency;
-  const receiptNo = st.number ? recuNumberLabel(st.number) : (recuNextNumberHint ? recuNumberLabel(recuNextNumberHint) : 'JC-REC…');
+  const receiptNo = recuCode(st) || (recuNextNumberHint ? recuNumberLabel(recuNextNumberHint) : 'JC-REC…');
   const date = recuFormatDate(st.issuedOn);
   const company = st.company.name || 'JC Multimedia';
   const navy = '#16296B', orange = '#F79A0E', ink = '#111111', muted = '#4A4A55', gray = '#E3E2EA';
@@ -603,7 +566,6 @@ function recuDraw(opts){
   if(st.clientCompany) clientLines.push(st.clientCompany);
   if(st.clientPhone) clientLines.push('Tél : ' + st.clientPhone);
   if(st.clientAddress) wrapText(st.clientAddress, 400, '15px Poppins').forEach(l => clientLines.push(l));
-  if(st.orderCode) clientLines.push('Commande : ' + st.orderCode);
   const clientTop = 318;
   const clientBottom = clientTop + 48 + clientLines.length * 22;
 
@@ -847,7 +809,7 @@ async function recuDecorateOrderButtons(){
     (data || []).forEach(r => { if(!byOrder[r.order_id] || r.number > byOrder[r.order_id]) byOrder[r.order_id] = r.number; });
     btns.forEach(b => {
       const n = byOrder[Number(b.dataset.orderId)];
-      if(n){ b.textContent = `🧾 Voir le reçu ${recuNumberLabel(n)}`; b.classList.remove('btn-wa'); b.classList.add('btn-ghost'); }
+      if(n){ b.textContent = '🧾 Voir le reçu'; b.classList.remove('btn-wa'); b.classList.add('btn-ghost'); }
     });
   }catch(e){ console.warn('recuDecorateOrderButtons:', e); }
 }
