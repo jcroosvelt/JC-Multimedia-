@@ -555,9 +555,9 @@ function recuDraw(opts){
   const colDesc = tX + 32, colQty = tX + tW*0.50, colPU = tX + tW*0.60, colSub = tX + tW*0.79;
   const descMaxW = colQty - colDesc - 40;
   const rowsMeta = st.items.map(s => {
-    const nameLines = wrapText(s.name || '—', descMaxW, '500 17px Poppins');
-    const descLines = s.description ? wrapText(s.description, descMaxW, '14px Poppins') : [];
-    const h = Math.max(56, 22 + nameLines.length * 22 + descLines.length * 19 + 12);
+    const nameLines = wrapText(s.name || '—', descMaxW, '500 18px Poppins');
+    const descLines = s.description ? wrapText(s.description, descMaxW, '16px Poppins') : [];
+    const h = Math.max(58, 22 + nameLines.length * 24 + descLines.length * 21 + 12);
     return { ...s, nameLines, descLines, h };
   });
 
@@ -565,9 +565,9 @@ function recuDraw(opts){
   const clientLines = [];
   if(st.clientCompany) clientLines.push(st.clientCompany);
   if(st.clientPhone) clientLines.push('Tél : ' + st.clientPhone);
-  if(st.clientAddress) wrapText(st.clientAddress, 400, '15px Poppins').forEach(l => clientLines.push(l));
+  if(st.clientAddress) wrapText(st.clientAddress, 420, '17px Poppins').forEach(l => clientLines.push(l));
   const clientTop = 318;
-  const clientBottom = clientTop + 48 + clientLines.length * 22;
+  const clientBottom = clientTop + 50 + clientLines.length * 25;
 
   const tableTop = Math.max(clientBottom + 40, 470);
   const headH = 66;
@@ -581,9 +581,9 @@ function recuDraw(opts){
   const rowH = 54;
   const bottomTop = tableBottom + 56;
   const totBoxH = totRows.length * rowH + (rowH + 6) + 14 + 2 * 44;   // lignes + TOTAL + acompte/solde
-  const payBlockH = 250;
+  const payBlockH = 290;
   const contactTop = bottomTop + Math.max(totBoxH, payBlockH) + 80;
-  const contentBottom = contactTop + 190;
+  const contentBottom = contactTop + 200;
   const H = Math.max(contentBottom + 110, Math.round(W * 1.414));
 
   // Échelle : 3 (pleine résolution) ou ajustée pour que le plus grand côté
@@ -634,9 +634,9 @@ function recuDraw(opts){
   ctx.fillText(fitText('FACTURE', 560, '800 76px Poppins'), 92, 132);
   ctx.font = '500 28px Poppins';
   ctx.fillText(fitText(company, 520, '500 28px Poppins'), 94, 172);
-  ctx.font = '500 16px Poppins';
-  spaced('REÇU N° : ' + receiptNo, 95, 214, 2.2);
-  spaced('DATE : ' + date, 95, 238, 2.2);
+  ctx.font = '500 18px Poppins';
+  spaced('REÇU N° : ' + receiptNo, 95, 214, 2);
+  spaced('DATE : ' + date, 95, 241, 2);
 
   /* ---------- Facturé à ---------- */
   const rX = W - M - 14;
@@ -646,8 +646,8 @@ function recuDraw(opts){
   ctx.fillText('Facturé à :', rX, clientTop);
   fitFont(st.clientName || '—', 560, 700, 38, 'Poppins', 22);
   ctx.fillText(fitText(st.clientName || '—', 560, ctx.font), rX, clientTop + 44);
-  ctx.font = '15px Poppins'; ctx.fillStyle = '#222';
-  clientLines.forEach((l, i) => ctx.fillText(fitText(l, 560, '15px Poppins'), rX, clientTop + 72 + i * 22));
+  ctx.font = '17px Poppins'; ctx.fillStyle = '#222';
+  clientLines.forEach((l, i) => ctx.fillText(fitText(l, 560, '17px Poppins'), rX, clientTop + 74 + i * 25));
 
   /* ---------- Tableau ---------- */
   ctx.fillStyle = navy;
@@ -667,18 +667,18 @@ function recuDraw(opts){
     const rowTotal = (Number(s.qty)||0) * (Number(s.price)||0);
     if(idx % 2 === 1){ ctx.fillStyle = gray; ctx.fillRect(tX, rowY, tW, s.h); }
     const firstY = rowY + 34;
-    ctx.textAlign = 'left'; ctx.fillStyle = ink; ctx.font = '500 17px Poppins';
-    s.nameLines.forEach((l, i) => ctx.fillText(l, colDesc, firstY + i * 22));
+    ctx.textAlign = 'left'; ctx.fillStyle = ink; ctx.font = '500 18px Poppins';
+    s.nameLines.forEach((l, i) => ctx.fillText(l, colDesc, firstY + i * 24));
     if(s.descLines.length){
-      ctx.font = '14px Poppins'; ctx.fillStyle = muted;
-      s.descLines.forEach((l, i) => ctx.fillText(l, colDesc, firstY + s.nameLines.length * 22 + i * 19 - 2));
+      ctx.font = '16px Poppins'; ctx.fillStyle = muted;
+      s.descLines.forEach((l, i) => ctx.fillText(l, colDesc, firstY + s.nameLines.length * 24 + i * 21 - 2));
     }
-    ctx.fillStyle = ink; ctx.font = '17px Poppins';
+    ctx.fillStyle = ink; ctx.font = '18px Poppins';
     ctx.textAlign = 'center'; ctx.fillText(String(Number(s.qty)||0), colQty, firstY);
     ctx.textAlign = 'left';
-    fitFont(recuMoney(s.price, cur), colSub - colPU - 12, 400, 17);
+    fitFont(recuMoney(s.price, cur), colSub - colPU - 12, 400, 18);
     ctx.fillText(recuMoney(s.price, cur), colPU, firstY);
-    fitFont(recuMoney(rowTotal, cur), tX + tW - colSub - 8, 400, 17);
+    fitFont(recuMoney(rowTotal, cur), tX + tW - colSub - 8, 400, 18);
     ctx.fillText(recuMoney(rowTotal, cur), colSub, firstY);
     ctx.font = '17px Poppins';
     rowY += s.h;
@@ -693,7 +693,7 @@ function recuDraw(opts){
     ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 17px Poppins';
     ctx.fillText(r[0], lblX, y + rowH/2 + 6);
     const lw = ctx.measureText(r[0]).width;
-    ctx.textAlign = 'right'; fitFont(r[1], valX - lblX - lw - 14, 400, 17);
+    ctx.textAlign = 'right'; fitFont(r[1], valX - lblX - lw - 14, 400, 18);
     ctx.fillText(r[1], valX, y + rowH/2 + 6);
     y += rowH;
   });
@@ -706,17 +706,17 @@ function recuDraw(opts){
   y += rowH + 6 + 14;
   // Acompte et solde
   ctx.fillStyle = '#FFF3DF'; ctx.fillRect(boxX, y, boxW, 44);
-  ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 15px Poppins';
+  ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 16px Poppins';
   const depLabel = 'Acompte requis (' + (Number(st.depositPercent)||0) + ' %)';
   ctx.fillText(depLabel, lblX, y + 28);
   const depLw = ctx.measureText(depLabel).width;
-  ctx.textAlign = 'right'; fitFont(recuMoney(t.depositAmount, cur), valX - lblX - depLw - 12, 700, 16); ctx.fillStyle = '#B86E00';
+  ctx.textAlign = 'right'; fitFont(recuMoney(t.depositAmount, cur), valX - lblX - depLw - 12, 700, 18); ctx.fillStyle = '#B86E00';
   ctx.fillText(recuMoney(t.depositAmount, cur), valX, y + 28);
   y += 44;
-  ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 15px Poppins';
+  ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 16px Poppins';
   ctx.fillText('Solde à la livraison', lblX, y + 28);
   const solLw = ctx.measureText('Solde à la livraison').width;
-  ctx.textAlign = 'right'; fitFont(recuMoney(t.balanceAmount, cur), valX - lblX - solLw - 12, 600, 16);
+  ctx.textAlign = 'right'; fitFont(recuMoney(t.balanceAmount, cur), valX - lblX - solLw - 12, 600, 18);
   ctx.fillText(recuMoney(t.balanceAmount, cur), valX, y + 28);
 
   /* ---------- Détails de paiement (à gauche) ---------- */
@@ -726,17 +726,17 @@ function recuDraw(opts){
   ctx.fillText('DÉTAILS DE PAIEMENT :', tX + 18, py);
   py += 40;
   function payItem(label, value){
-    ctx.fillStyle = ink; ctx.font = '600 16px Poppins';
-    ctx.fillText(label, tX + 18, py); py += 22;
-    ctx.font = 'italic 16px Poppins'; ctx.fillStyle = '#222';
-    ctx.fillText(fitText(value, pW - 18, 'italic 16px Poppins'), tX + 18, py); py += 32;
+    ctx.fillStyle = ink; ctx.font = '600 18px Poppins';
+    ctx.fillText(label, tX + 18, py); py += 24;
+    ctx.font = 'italic 18px Poppins'; ctx.fillStyle = '#222';
+    ctx.fillText(fitText(value, pW - 18, 'italic 18px Poppins'), tX + 18, py); py += 34;
   }
   if(st.payment.moncash) payItem('MonCash :', st.payment.moncash);
   if(st.payment.natcash) payItem('NatCash :', st.payment.natcash);
   if(st.payment.accountName) payItem('Nom du compte :', st.payment.accountName);
-  ctx.font = '13px Poppins'; ctx.fillStyle = muted;
-  wrapText("Un acompte d'au moins " + (Number(st.depositPercent)||0) + " % est obligatoire avant le début du travail.", pW - 18, '13px Poppins')
-    .forEach(l => { ctx.fillText(l, tX + 18, py); py += 18; });
+  ctx.font = '15px Poppins'; ctx.fillStyle = muted;
+  wrapText("Un acompte d'au moins " + (Number(st.depositPercent)||0) + " % est obligatoire avant le début du travail.", pW - 18, '15px Poppins')
+    .forEach(l => { ctx.fillText(l, tX + 18, py); py += 20; });
 
   /* ---------- Contact (à gauche) ---------- */
   let cy = contactTop;
@@ -765,11 +765,11 @@ function recuDraw(opts){
     ['pin', st.company.address]
   ].filter(c => c[1]);
   contacts.forEach(([k, v]) => {
-    cy += 22;
+    cy += 23;
     icon(k, tX + 31, cy);
-    ctx.fillStyle = ink; ctx.font = '15px Poppins'; ctx.textAlign = 'left';
-    ctx.fillText(fitText(v, contactW, '15px Poppins'), tX + 58, cy + 5);
-    cy += 22;
+    ctx.fillStyle = ink; ctx.font = '17px Poppins'; ctx.textAlign = 'left';
+    ctx.fillText(fitText(v, contactW, '17px Poppins'), tX + 58, cy + 6);
+    cy += 23;
   });
 
   /* ---------- Merci + signature (à droite) ---------- */
@@ -783,7 +783,7 @@ function recuDraw(opts){
   }
   ctx.strokeStyle = '#9A9AA6'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(sx - 120, contactTop + 98); ctx.lineTo(sx + 120, contactTop + 98); ctx.stroke();
-  ctx.font = '15px Poppins'; ctx.fillStyle = '#222';
+  ctx.font = '17px Poppins'; ctx.fillStyle = '#222';
   ctx.fillText(st.signerName ? 'Signature — ' + company : 'Signature', sx, contactTop + 122);
 
   /* ---------- Pied de page : formes diagonales ---------- */
