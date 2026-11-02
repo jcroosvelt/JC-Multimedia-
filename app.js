@@ -2196,7 +2196,7 @@ async function adminLogout(){
   const em = document.getElementById('adminEmailInput'); if(em) em.value = '';
 }
 function showAdminTab(name){
-  ['dashboard','catalog','content','banner','portfolio','reviews','promos','whatsapp','orders','recus','files','customers','settings'].forEach(t=>{
+  ['dashboard','catalog','content','banner','portfolio','reviews','promos','whatsapp','orders','paylinks','recus','files','customers','settings'].forEach(t=>{
     const panel = document.getElementById('adminTab-'+t);
     if(panel) panel.style.display = (t===name) ? 'block' : 'none';
   });
@@ -2210,6 +2210,7 @@ function showAdminTab(name){
   if(name==='promos') renderAdminPromos();
   if(name==='whatsapp') renderAdminWhatsapp();
   if(name==='orders') renderAdminOrders();
+  if(name==='paylinks' && typeof renderAdminPayLinks === 'function') renderAdminPayLinks();
   if(name==='recus' && typeof renderAdminRecus === 'function') renderAdminRecus();
   if(name==='files') renderAdminFiles();
   if(name==='customers') renderAdminCustomers();
@@ -3766,9 +3767,7 @@ async function renderAdminOrders(){
     : "Supabase n'est pas configuré : liste des commandes envoyées via WhatsApp depuis <strong>cet appareil</strong> uniquement.";
   el.innerHTML = `
     <div class="admin-note">${note}</div>
-    <div id="payLinkAdmin"></div>
     <div class="modal-actions" style="margin-bottom:16px;">
-      ${SUPABASE_ENABLED ? `<button class="btn btn-primary" onclick="payLinkOpenForm()">+ Commande WhatsApp (lien de paiement)</button>` : ''}
       <button class="btn btn-ghost" onclick="exportOrdersCSV()">Exporter en CSV</button>
       <button class="btn btn-ghost" onclick="adminClearOrders()">Vider l'historique</button>
     </div>

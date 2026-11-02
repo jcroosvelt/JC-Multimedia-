@@ -603,3 +603,13 @@ footer nav a:hover{color:var(--amber);}
 .admin-tab-panel{min-width:0; overflow-wrap:anywhere;}
 .admin-tab-panel input, .admin-tab-panel select, .admin-tab-panel textarea,
 .admin-tab-panel img, .admin-tab-panel canvas, .admin-tab-panel table{max-width:100%;}
+
+/* Onglet admin « Liens de paiement » */
+.paylink-filters{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px;}
+.paylink-filters .opt-btn{flex:0 1 auto; width:auto; margin:0; padding:8px 12px; font-size:.85rem;}
+.paylink-row{border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:var(--bg);}
+.paylink-row-head{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:4px;}
+.paylink-badge{font-size:.78rem; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap;}
+.paylink-badge.paid{background:#E6F6EC; color:#1B7A3D;}
+.paylink-badge.pending{background:#FFF4E0; color:#8A5A00;}
+.paylink-badge.cancelled{background:#EEF0F4; color:#5B6475;}

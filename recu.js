@@ -809,7 +809,7 @@ async function recuFromOrder(orderId){
 }
 
 /* =========================================================
-   COMMANDE WHATSAPP → LIEN DE PAIEMENT (onglet Commandes)
+   COMMANDE WHATSAPP → LIEN DE PAIEMENT (onglet « Liens de paiement »)
    L'admin saisit la commande prise sur WhatsApp ; elle est
    enregistrée comme une commande normale (code JC-…), avec un
    jeton secret. Le client reçoit le lien /payer/<jeton> et paie
@@ -834,6 +834,72 @@ function payLinkWaNumber(phone){
 function payLinkTotal(f){
   return f.lines.reduce((a,l) => a + (Number(l.qty)||0) * (Number(l.price)||0), 0) + (Number(f.deliveryFee)||0);
 }
+
+/* ---- Onglet « Liens de paiement » ---- */
+let PAYLINKS_FILTER = 'all';
+let PAYLINKS_LOADING = null;
+function renderAdminPayLinks(){
+  PAYLINKS_LOADING = payLinksRenderTab();
+  return PAYLINKS_LOADING;
+}
+async function payLinksRenderTab(){
+  const el = document.getElementById('adminTab-paylinks');
+  if(!el) return;
+  if(typeof SUPABASE_ENABLED !== 'undefined' && !SUPABASE_ENABLED){
+    el.innerHTML = `<div class="admin-note">⚠️ Nécessite que Supabase soit configuré.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="admin-note">Pour un client qui commande sur WhatsApp : créez la commande ici, puis envoyez-lui le lien. Il paie par MonCash ou Natcash, et le paiement est confirmé automatiquement.</div>
+    <div id="payLinkAdmin"></div>
+    <div class="modal-actions" style="margin-bottom:16px;">
+      <button class="btn btn-primary" onclick="payLinkOpenForm()">+ Nouveau lien de paiement</button>
+    </div>
+    <div id="payLinksList"><p class="card-sub">Chargement…</p></div>`;
+  await payLinksRenderList();
+}
+async function payLinksRenderList(){
+  const box = document.getElementById('payLinksList');
+  if(!box) return;
+  try{
+    const { data: orders, error } = await db.from('orders')
+      .select('id, code, created_at, customer_name, customer_phone, total, status, pay_token')
+      .eq('source', 'whatsapp').order('created_at', { ascending:false }).limit(300);
+    if(error) throw error;
+    const list = (orders || []).filter(o => o.pay_token);
+    const ids = list.map(o => o.id);
+    const paid = new Set();
+    if(ids.length){
+      const { data: pays } = await db.from('payments').select('order_id, status').in('order_id', ids);
+      (pays || []).forEach(p => { if(p.status === 'Confirmé') paid.add(p.order_id); });
+    }
+    const stateOf = o => (o.status === 'Annulée' || o.status === 'Refusée') ? 'cancelled' : (paid.has(o.id) ? 'paid' : 'pending');
+    const counts = { all: list.length, pending: 0, paid: 0, cancelled: 0 };
+    list.forEach(o => counts[stateOf(o)]++);
+    const filters = [['all','Tous'],['pending','En attente'],['paid','Payés'],['cancelled','Annulés']];
+    const shown = PAYLINKS_FILTER === 'all' ? list : list.filter(o => stateOf(o) === PAYLINKS_FILTER);
+    const badge = st => st === 'paid' ? '<span class="paylink-badge paid">✅ Payé</span>'
+      : st === 'cancelled' ? '<span class="paylink-badge cancelled">Annulé</span>'
+      : '<span class="paylink-badge pending">⏳ En attente</span>';
+    box.innerHTML = `
+      <div class="paylink-filters">
+        ${filters.map(([k,l]) => `<button class="opt-btn ${PAYLINKS_FILTER===k?'selected':''}" onclick="payLinksSetFilter('${k}')">${l} (${counts[k]})</button>`).join('')}
+      </div>
+      ${shown.length ? shown.map(o => `
+        <div class="paylink-row">
+          <div class="paylink-row-head">
+            <strong>${escapeHtml(o.code || '—')}</strong> ${badge(stateOf(o))}
+          </div>
+          <div class="card-sub">${escapeHtml(o.customer_name || 'Client')} · ${escapeHtml(o.customer_phone || '')}</div>
+          <div class="card-sub">${escapeHtml(formatHTG(Number(o.total) || 0))} · ${new Date(o.created_at).toLocaleDateString('fr-FR')}</div>
+          ${stateOf(o) === 'pending' ? `<button class="btn btn-ghost" style="margin-top:10px;" onclick="payLinkShare(${Number(o.id)})">🔗 Renvoyer / copier le lien</button>` : ''}
+        </div>`).join('') : `<p class="card-sub">${list.length ? 'Aucun lien dans cette catégorie.' : 'Aucun lien de paiement pour le moment.'}</p>`}`;
+  }catch(e){
+    console.error('payLinksRenderList:', e);
+    box.innerHTML = `<p class="card-sub">Impossible de charger les liens de paiement.</p>`;
+  }
+}
+function payLinksSetFilter(k){ PAYLINKS_FILTER = k; payLinksRenderList(); }
 
 function payLinkOpenForm(){
   payLinkForm = payLinkBlankForm();
@@ -952,7 +1018,9 @@ async function payLinkCreate(){
   const btn = document.getElementById('payLinkCreateBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Création…'; }
   try{
-    const token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '').slice(0, 40);
+    // Jeton secret de 40 caractères (fonctionne aussi sur les anciens téléphones)
+    const bytes = crypto.getRandomValues(new Uint8Array(20));
+    const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
     const { data: order, error } = await db.from('orders').insert({
       customer_name: f.clientName,
       customer_phone: f.clientPhone,
@@ -985,7 +1053,7 @@ async function payLinkCreate(){
       throw itemsErr;
     }
     payLinkForm = null;
-    await renderAdminOrders();
+    await renderAdminPayLinks();
     payLinkShowResult({ id: order.id, code: order.code, token, total, name: f.clientName, phone: f.clientPhone });
   }catch(e){
     console.error('payLinkCreate:', e);
@@ -1022,6 +1090,11 @@ async function payLinkCopy(){
   catch(e){ showToast('Copie impossible : appuie sur le lien puis copie-le'); }
 }
 async function payLinkShare(orderId){
+  const panel = document.getElementById('adminTab-paylinks');
+  if(panel && panel.style.display === 'none'){
+    showAdminTab('paylinks');
+    if(PAYLINKS_LOADING) await PAYLINKS_LOADING;
+  }
   try{
     const { data, error } = await db.from('orders').select('id, code, total, customer_name, customer_phone, pay_token').eq('id', orderId).single();
     if(error) throw error;
