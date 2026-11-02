@@ -454,7 +454,7 @@ async function recuExport(mode){
   showToast(`Reçu ${recuNumberLabel(recuState.number)} enregistré`);
 }
 
-/* ---------- Dessin (repris de l'ancienne app jcrecu) ---------- */
+/* ---------- Dessin du reçu (modèle « facture » marine et orange) ---------- */
 function recuScheduleDraw(){
   if(recuDrawPending) return;
   recuDrawPending = true;
@@ -467,7 +467,9 @@ async function recuWaitFontsThenDraw(){
         document.fonts.load('800 38px Poppins'),
         document.fonts.load('700 17px Poppins'),
         document.fonts.load('600 18px Poppins'),
-        document.fonts.load('15px Poppins')
+        document.fonts.load('15px Poppins'),
+        document.fonts.load('500 28px Poppins'),
+        document.fonts.load('600 38px "Dancing Script"')
       ]);
     }
   }catch(e){}
@@ -484,7 +486,9 @@ function recuDraw(){
   const receiptNo = st.number ? recuNumberLabel(st.number) : (recuNextNumberHint ? recuNumberLabel(recuNextNumberHint) : 'JC-REC…');
   const date = recuFormatDate(st.issuedOn);
   const company = st.company.name || 'JC Multimedia';
-  const navy = '#0F2142', orange = '#F5A21E', ink = '#26262B', muted = '#8A8778';
+  const navy = '#16296B', orange = '#F79A0E', ink = '#111111', muted = '#4A4A55', gray = '#E3E2EA';
+  const M = 46;                 // marge gauche / droite
+  const tX = M, tW = W - 2*M;   // largeur utile
 
   function wrapText(text, maxWidth, font){
     ctx.font = font;
@@ -505,232 +509,265 @@ function recuDraw(){
     while(s.length > 1 && ctx.measureText(s + '…').width > maxWidth) s = s.slice(0, -1);
     return s + '…';
   }
+  function fitFont(text, maxWidth, weight, size, family, minSize){
+    // Réduit la taille jusqu'à ce que le texte tienne (au lieu de le couper)
+    family = family || 'Poppins'; minSize = minSize || 10;
+    let sz = size;
+    ctx.font = `${weight} ${sz}px ${family}`;
+    while(sz > minSize && ctx.measureText(String(text || '')).width > maxWidth){
+      sz -= 0.5; ctx.font = `${weight} ${sz}px ${family}`;
+    }
+    return ctx.font;
+  }
+  function spaced(text, x, y, spacing){
+    // Texte avec espacement des lettres (compatible tous navigateurs)
+    let cx = x;
+    for(const ch of String(text)){ ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + spacing; }
+  }
 
+  /* ---------- Mise en page : calcul des hauteurs ---------- */
+  // Colonnes du tableau (alignées à gauche, comme le modèle)
+  const colDesc = tX + 32, colQty = tX + tW*0.50, colPU = tX + tW*0.60, colSub = tX + tW*0.79;
+  const descMaxW = colQty - colDesc - 40;
   const rowsMeta = st.items.map(s => {
-    const lines = wrapText(s.description || '', 195, '15px Poppins');
-    const nameLines = wrapText(s.name || '—', 175, '600 16px Poppins');
-    const n = Math.max(lines.length, nameLines.length);
-    return { ...s, lines, nameLines, h: Math.max(42, n * 20 + 18) };
+    const nameLines = wrapText(s.name || '—', descMaxW, '500 17px Poppins');
+    const descLines = s.description ? wrapText(s.description, descMaxW, '14px Poppins') : [];
+    const h = Math.max(56, 22 + nameLines.length * 22 + descLines.length * 19 + 12);
+    return { ...s, nameLines, descLines, h };
   });
-  const tableRowsHeight = rowsMeta.reduce((a,r) => a + r.h, 0);
 
-  const logoZoneH = 300, bannerH = 96;
-  const headerH = logoZoneH + bannerH;
-  const infoBoxTop = headerH + 42;
-  const infoBoxH = 122;
-  const tableTop = infoBoxTop + infoBoxH + 36;
-  const tableHeaderH = 50;
-  const afterTableY = tableTop + tableHeaderH + tableRowsHeight + 40;
-  const bottomBlockH = 335;
-  const contentH = afterTableY + bottomBlockH + 70;
-  const H = Math.max(contentH, Math.round(W * 5/4));
+  // Bloc « Facturé à » (aligné à droite)
+  const clientLines = [];
+  if(st.clientCompany) clientLines.push(st.clientCompany);
+  if(st.clientPhone) clientLines.push('Tél : ' + st.clientPhone);
+  if(st.clientAddress) wrapText(st.clientAddress, 400, '15px Poppins').forEach(l => clientLines.push(l));
+  if(st.orderCode) clientLines.push('Commande : ' + st.orderCode);
+  const clientTop = 318;
+  const clientBottom = clientTop + 48 + clientLines.length * 22;
+
+  const tableTop = Math.max(clientBottom + 40, 470);
+  const headH = 66;
+  const tableBottom = tableTop + headH + rowsMeta.reduce((a, r) => a + r.h, 0);
+
+  const t = recuTotals(st);
+  const totRows = [['Sous-total', recuMoney(t.subtotal, cur)]];
+  if(Number(st.taxPercent)) totRows.push(['Taxe (' + (Number(st.taxPercent)||0) + ' %)', recuMoney(t.taxAmount, cur)]);
+  if(Number(st.discount)) totRows.push(['Remise', '-' + recuMoney(st.discount, cur)]);
+  if(Number(st.deliveryFee)) totRows.push(['Livraison', recuMoney(st.deliveryFee, cur)]);
+  const rowH = 54;
+  const bottomTop = tableBottom + 56;
+  const totBoxH = totRows.length * rowH + (rowH + 6) + 14 + 2 * 44;   // lignes + TOTAL + acompte/solde
+  const payBlockH = 250;
+  const contactTop = bottomTop + Math.max(totBoxH, payBlockH) + 80;
+  const contentBottom = contactTop + 190;
+  const H = Math.max(contentBottom + 110, Math.round(W * 1.414));
 
   const SCALE = 3;
   canvas.width = W * SCALE;
   canvas.height = H * SCALE;
   ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+  ctx.textBaseline = 'alphabetic';
 
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, W, H);
 
-  // En-tête : logo
+  /* ---------- En-tête : formes diagonales ---------- */
+  // Bord bas du bandeau marine : droite de (49, 346) à (900, 95)
+  const edgeY = x => 346 - (346 - 95) * (x - 49) / (W - 49);
+  ctx.fillStyle = navy;
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, 95); ctx.lineTo(49, 346); ctx.lineTo(0, 140);
+  ctx.closePath(); ctx.fill();
+  // Petit triangle orange à gauche
+  ctx.fillStyle = orange;
+  ctx.beginPath(); ctx.moveTo(0, 140); ctx.lineTo(49, 346); ctx.lineTo(0, 288); ctx.closePath(); ctx.fill();
+  // Bande orange à droite, collée au bandeau
+  ctx.beginPath();
+  ctx.moveTo(470, edgeY(470)); ctx.lineTo(W, 95); ctx.lineTo(W, 152); ctx.lineTo(486, edgeY(486) + 56);
+  ctx.closePath(); ctx.fill();
+
+  // Logo dans une pastille blanche
+  const lcX = W - M - 52, lcY = 66, lr = 50;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath(); ctx.arc(lcX, lcY, lr, 0, Math.PI * 2); ctx.fill();
   if(recuLogoReady && recuLogoImg.naturalWidth){
-    const maxW = 480, maxH = logoZoneH - 50;
-    const ratio = Math.min(maxW / recuLogoImg.naturalWidth, maxH / recuLogoImg.naturalHeight);
+    const side = lr * 2 - 14;
+    const ratio = Math.min(side / recuLogoImg.naturalWidth, side / recuLogoImg.naturalHeight);
     const w = recuLogoImg.naturalWidth * ratio, h = recuLogoImg.naturalHeight * ratio;
-    ctx.drawImage(recuLogoImg, (W - w) / 2, (logoZoneH - h) / 2, w, h);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(lcX, lcY, lr - 4, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(recuLogoImg, lcX - w/2, lcY - h/2, w, h);
+    ctx.restore();
   }
-  ctx.strokeStyle = '#E7E3D8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(44, logoZoneH - 1); ctx.lineTo(W - 44, logoZoneH - 1); ctx.stroke();
 
-  // Bandeau marine + accents orange
-  ctx.fillStyle = navy;
-  ctx.fillRect(0, logoZoneH, W, bannerH);
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(W*0.50, logoZoneH); ctx.lineTo(W*0.64, logoZoneH);
-  ctx.lineTo(W*0.54, logoZoneH + bannerH); ctx.lineTo(W*0.44, logoZoneH + bannerH);
-  ctx.closePath(); ctx.fillStyle = orange; ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(W*0.64, logoZoneH); ctx.lineTo(W*0.69, logoZoneH);
-  ctx.lineTo(W*0.59, logoZoneH + bannerH); ctx.lineTo(W*0.54, logoZoneH + bannerH);
-  ctx.closePath(); ctx.fillStyle = '#c97f16'; ctx.fill();
-  ctx.restore();
-
+  // Titre, entreprise, code et date
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#EDEDED';
-  ctx.fillText(fitText(st.company.address, W*0.42 - 44, '500 15px Poppins'), 44, logoZoneH + bannerH/2 + 5);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '800 76px Poppins';
+  ctx.fillText(fitText('FACTURE', 560, '800 76px Poppins'), 92, 132);
+  ctx.font = '500 28px Poppins';
+  ctx.fillText(fitText(company, 520, '500 28px Poppins'), 94, 172);
+  ctx.font = '500 16px Poppins';
+  spaced('REÇU N° : ' + receiptNo, 95, 214, 2.2);
+  spaced('DATE : ' + date, 95, 238, 2.2);
 
+  /* ---------- Facturé à ---------- */
+  const rX = W - M - 14;
   ctx.textAlign = 'right';
-  ctx.fillStyle = orange;
-  ctx.font = '800 38px Poppins';
-  ctx.fillText('FACTURE', W - 44, logoZoneH + 42);
-  ctx.font = '600 16px Poppins';
-  ctx.fillStyle = '#EDEDED';
-  ctx.fillText('CODE : ' + receiptNo, W - 44, logoZoneH + 66);
-  ctx.fillText('DATE : ' + date, W - 44, logoZoneH + 86);
-
-  // Blocs client / entreprise
-  const boxW = (W - 88 - 30) / 2;
-  const box1X = 44, box2X = 44 + boxW + 30;
-  function labelTag(x, y, text){
-    ctx.font = '700 15px Poppins';
-    const padX = 13;
-    const tw = ctx.measureText(text).width + padX*2;
-    ctx.fillStyle = navy; ctx.fillRect(x, y, tw, 30);
-    ctx.fillStyle = orange; ctx.fillRect(x + tw - 5, y, 5, 30);
-    ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
-    ctx.fillText(text, x + padX, y + 20);
-  }
-  labelTag(box1X, infoBoxTop, 'FACTURÉ À :');
-  labelTag(box2X, infoBoxTop, 'DE :');
-
-  ctx.textAlign = 'left';
   ctx.fillStyle = ink;
-  const ly = infoBoxTop + 54;
-  ctx.fillText(fitText(st.clientName || '—', boxW, '600 18px Poppins'), box1X, ly);
-  ctx.font = '15px Poppins'; ctx.fillStyle = muted;
-  let ly2 = ly + 23;
-  if(st.clientCompany){ ctx.fillText(fitText(st.clientCompany, boxW, '15px Poppins'), box1X, ly2); ly2 += 20; }
-  if(st.clientPhone){ ctx.fillText(fitText('Tél : ' + st.clientPhone, boxW, '15px Poppins'), box1X, ly2); ly2 += 20; }
-  if(st.clientAddress){ wrapText(st.clientAddress, boxW, '15px Poppins').forEach(l => { ctx.fillText(l, box1X, ly2); ly2 += 20; }); }
-  if(st.orderCode){ ctx.fillText(fitText('Commande : ' + st.orderCode, boxW, '15px Poppins'), box1X, ly2); ly2 += 20; }
+  ctx.font = '600 18px Poppins';
+  ctx.fillText('Facturé à :', rX, clientTop);
+  fitFont(st.clientName || '—', 560, 700, 38, 'Poppins', 22);
+  ctx.fillText(fitText(st.clientName || '—', 560, ctx.font), rX, clientTop + 44);
+  ctx.font = '15px Poppins'; ctx.fillStyle = '#222';
+  clientLines.forEach((l, i) => ctx.fillText(fitText(l, 560, '15px Poppins'), rX, clientTop + 72 + i * 22));
 
-  ctx.fillStyle = ink;
-  const ry = infoBoxTop + 54;
-  ctx.fillText(fitText(company, boxW, '600 18px Poppins'), box2X, ry);
-  ctx.font = '15px Poppins'; ctx.fillStyle = muted;
-  let ry2 = ry + 23;
-  if(st.company.address) wrapText(st.company.address, boxW, '15px Poppins').forEach(l => { ctx.fillText(l, box2X, ry2); ry2 += 20; });
-  if(st.company.phones){ ctx.fillText(fitText('Tél : ' + st.company.phones, boxW, '15px Poppins'), box2X, ry2); ry2 += 20; }
-  if(st.company.email){ ctx.fillText(fitText(st.company.email, boxW, '15px Poppins'), box2X, ry2); ry2 += 20; }
-
-  // Tableau
-  const tX = 44, tW = W - 88;
-  ctx.fillStyle = orange;
-  ctx.fillRect(tX, tableTop, tW, tableHeaderH);
-  const colService = tX + 18;
-  const colDesc = tX + tW*0.30;
-  const colQty = tX + tW*0.60;
-  const colPU = tX + tW*0.72;
-  const colTotal = tX + tW - 18;
-
+  /* ---------- Tableau ---------- */
   ctx.fillStyle = navy;
-  ctx.font = '700 15px Poppins';
+  ctx.fillRect(tX, tableTop, tW, headH);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '600 18px Poppins';
   ctx.textAlign = 'left';
-  ctx.fillText('SERVICE', colService, tableTop + 31);
-  ctx.fillText('DESCRIPTION', colDesc, tableTop + 31);
-  ctx.textAlign = 'center';
-  ctx.fillText('QTÉ', colQty, tableTop + 31);
-  ctx.textAlign = 'right';
-  ctx.fillText('PRIX UNIT.', colPU + 52, tableTop + 31);
-  ctx.fillText('TOTAL', colTotal, tableTop + 31);
+  const hy = tableTop + headH/2 + 7;
+  ctx.fillText('Description', colDesc, hy);
+  ctx.textAlign = 'center'; ctx.fillText('Qté', colQty, hy);
+  ctx.textAlign = 'left';
+  ctx.fillText('Prix unit.', colPU, hy);
+  ctx.fillText('Sous-total', colSub, hy);
 
-  let rowY = tableTop + tableHeaderH;
+  let rowY = tableTop + headH;
   rowsMeta.forEach((s, idx) => {
     const rowTotal = (Number(s.qty)||0) * (Number(s.price)||0);
-    if(idx % 2 === 1){ ctx.fillStyle = '#F7F5EF'; ctx.fillRect(tX, rowY, tW, s.h); }
-    ctx.fillStyle = ink;
-    ctx.font = '600 16px Poppins';
+    if(idx % 2 === 1){ ctx.fillStyle = gray; ctx.fillRect(tX, rowY, tW, s.h); }
+    const firstY = rowY + 34;
+    ctx.textAlign = 'left'; ctx.fillStyle = ink; ctx.font = '500 17px Poppins';
+    s.nameLines.forEach((l, i) => ctx.fillText(l, colDesc, firstY + i * 22));
+    if(s.descLines.length){
+      ctx.font = '14px Poppins'; ctx.fillStyle = muted;
+      s.descLines.forEach((l, i) => ctx.fillText(l, colDesc, firstY + s.nameLines.length * 22 + i * 19 - 2));
+    }
+    ctx.fillStyle = ink; ctx.font = '17px Poppins';
+    ctx.textAlign = 'center'; ctx.fillText(String(Number(s.qty)||0), colQty, firstY);
     ctx.textAlign = 'left';
-    s.nameLines.forEach((l, i) => ctx.fillText(l, colService, rowY + 26 + i*20));
-    ctx.font = '14px Poppins';
-    ctx.fillStyle = muted;
-    s.lines.forEach((l, i) => ctx.fillText(l, colDesc, rowY + 26 + i*20));
-    ctx.fillStyle = ink;
-    ctx.textAlign = 'center';
-    ctx.fillText(String(Number(s.qty)||0), colQty, rowY + 26);
-    ctx.textAlign = 'right';
-    ctx.fillText(recuMoney(s.price, cur), colPU + 52, rowY + 26);
-    ctx.font = '600 16px Poppins';
-    ctx.fillText(recuMoney(rowTotal, cur), colTotal, rowY + 26);
-    ctx.strokeStyle = '#E7E3D8'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(tX, rowY + s.h); ctx.lineTo(tX + tW, rowY + s.h); ctx.stroke();
+    fitFont(recuMoney(s.price, cur), colSub - colPU - 12, 400, 17);
+    ctx.fillText(recuMoney(s.price, cur), colPU, firstY);
+    fitFont(recuMoney(rowTotal, cur), tX + tW - colSub - 8, 400, 17);
+    ctx.fillText(recuMoney(rowTotal, cur), colSub, firstY);
+    ctx.font = '17px Poppins';
     rowY += s.h;
   });
 
-  const t = recuTotals(st);
-  const bY = afterTableY;
+  /* ---------- Totaux (à droite) ---------- */
+  const boxX = tX + tW * 0.55, boxW = tW * 0.45;
+  const lblX = boxX + 32, valX = boxX + boxW - 24;
+  let y = bottomTop;
+  totRows.forEach((r, i) => {
+    if(i % 2 === 1){ ctx.fillStyle = gray; ctx.fillRect(boxX, y, boxW, rowH); }
+    ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 17px Poppins';
+    ctx.fillText(r[0], lblX, y + rowH/2 + 6);
+    const lw = ctx.measureText(r[0]).width;
+    ctx.textAlign = 'right'; fitFont(r[1], valX - lblX - lw - 14, 400, 17);
+    ctx.fillText(r[1], valX, y + rowH/2 + 6);
+    y += rowH;
+  });
+  ctx.fillStyle = navy; ctx.fillRect(boxX, y, boxW, rowH + 6);
+  ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'left'; ctx.font = '700 18px Poppins';
+  ctx.fillText('TOTAL', lblX, y + (rowH + 6)/2 + 7);
+  const totLw = ctx.measureText('TOTAL').width;
+  ctx.textAlign = 'right'; fitFont(recuMoney(t.total, cur), valX - lblX - totLw - 16, 700, 21);
+  ctx.fillText(recuMoney(t.total, cur), valX, y + (rowH + 6)/2 + 7);
+  y += rowH + 6 + 14;
+  // Acompte et solde
+  ctx.fillStyle = '#FFF3DF'; ctx.fillRect(boxX, y, boxW, 44);
+  ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 15px Poppins';
+  const depLabel = 'Acompte requis (' + (Number(st.depositPercent)||0) + ' %)';
+  ctx.fillText(depLabel, lblX, y + 28);
+  const depLw = ctx.measureText(depLabel).width;
+  ctx.textAlign = 'right'; fitFont(recuMoney(t.depositAmount, cur), valX - lblX - depLw - 12, 700, 16); ctx.fillStyle = '#B86E00';
+  ctx.fillText(recuMoney(t.depositAmount, cur), valX, y + 28);
+  y += 44;
+  ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.font = '600 15px Poppins';
+  ctx.fillText('Solde à la livraison', lblX, y + 28);
+  const solLw = ctx.measureText('Solde à la livraison').width;
+  ctx.textAlign = 'right'; fitFont(recuMoney(t.balanceAmount, cur), valX - lblX - solLw - 12, 600, 16);
+  ctx.fillText(recuMoney(t.balanceAmount, cur), valX, y + 28);
 
-  // Paiement
-  labelTag(tX, bY, 'PAIEMENT');
-  ctx.textAlign = 'left';
-  let pY = bY + 54;
-  if(st.payment.moncash){
-    ctx.fillStyle = ink; ctx.font = '700 15px Poppins'; ctx.fillText('MonCash', tX, pY);
-    ctx.font = '15px Poppins'; ctx.fillStyle = muted; ctx.fillText(st.payment.moncash, tX + 86, pY);
-    pY += 23;
+  /* ---------- Détails de paiement (à gauche) ---------- */
+  const pW = boxX - tX - 30;
+  let py = bottomTop + 20;
+  ctx.textAlign = 'left'; ctx.fillStyle = ink; ctx.font = '700 20px Poppins';
+  ctx.fillText('DÉTAILS DE PAIEMENT :', tX + 18, py);
+  py += 40;
+  function payItem(label, value){
+    ctx.fillStyle = ink; ctx.font = '600 16px Poppins';
+    ctx.fillText(label, tX + 18, py); py += 22;
+    ctx.font = 'italic 16px Poppins'; ctx.fillStyle = '#222';
+    ctx.fillText(fitText(value, pW - 18, 'italic 16px Poppins'), tX + 18, py); py += 32;
   }
-  if(st.payment.natcash){
-    ctx.fillStyle = ink; ctx.font = '700 15px Poppins'; ctx.fillText('NatCash', tX, pY);
-    ctx.font = '15px Poppins'; ctx.fillStyle = muted; ctx.fillText(st.payment.natcash, tX + 86, pY);
-    pY += 23;
-  }
-  if(st.payment.accountName){
-    ctx.fillStyle = ink; ctx.font = '700 15px Poppins'; ctx.fillText('Nom du compte', tX, pY);
-    pY += 20;
-    ctx.font = '15px Poppins'; ctx.fillStyle = muted; ctx.fillText(st.payment.accountName, tX, pY);
-    pY += 22;
-  }
+  if(st.payment.moncash) payItem('MonCash :', st.payment.moncash);
+  if(st.payment.natcash) payItem('NatCash :', st.payment.natcash);
+  if(st.payment.accountName) payItem('Nom du compte :', st.payment.accountName);
+  ctx.font = '13px Poppins'; ctx.fillStyle = muted;
+  wrapText("Un acompte d'au moins " + (Number(st.depositPercent)||0) + " % est obligatoire avant le début du travail.", pW - 18, '13px Poppins')
+    .forEach(l => { ctx.fillText(l, tX + 18, py); py += 18; });
 
-  // Totaux
-  const totX = tX + tW*0.53;
-  const totW = tW*0.47;
-  let totY = bY + 10;
-  function totalLine(label, value, big){
-    ctx.textAlign = 'left';
-    ctx.fillStyle = big ? '#fff' : muted;
-    ctx.font = big ? '700 17px Poppins' : '15px Poppins';
-    ctx.fillText(label, totX + (big ? 18 : 0), totY + (big ? 26 : 0));
-    ctx.textAlign = 'right';
-    ctx.fillStyle = big ? '#fff' : ink;
-    ctx.font = big ? '800 22px Poppins' : '600 15px Poppins';
-    ctx.fillText(value, totX + totW - (big ? 18 : 0), totY + (big ? 26 : 0));
+  /* ---------- Contact (à gauche) ---------- */
+  let cy = contactTop;
+  ctx.fillStyle = ink; ctx.font = '700 20px Poppins'; ctx.textAlign = 'left';
+  ctx.fillText('CONTACTEZ-NOUS', tX + 14, cy);
+  cy += 26;
+  function icon(kind, cx, cyy){
+    ctx.fillStyle = navy; ctx.beginPath(); ctx.arc(cx, cyy, 17, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#FFFFFF'; ctx.fillStyle = '#FFFFFF'; ctx.lineWidth = 1.8;
+    if(kind === 'phone'){
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(cx - 5.5, cyy - 9, 11, 18, 2.5) : ctx.rect(cx - 5.5, cyy - 9, 11, 18); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cyy + 5.5, 1.3, 0, Math.PI * 2); ctx.fill();
+    } else if(kind === 'web'){
+      ctx.beginPath(); ctx.arc(cx, cyy, 8.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(cx, cyy, 3.8, 8.5, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - 8.5, cyy); ctx.lineTo(cx + 8.5, cyy); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cyy - 3, 6.5, Math.PI * 0.85, Math.PI * 2.15); ctx.lineTo(cx, cyy + 9); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = navy; ctx.beginPath(); ctx.arc(cx, cyy - 3, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
   }
-  totalLine('Sous-total', recuMoney(t.subtotal, cur)); totY += 28;
-  totalLine('Taxe (' + (Number(st.taxPercent)||0) + '%)', recuMoney(t.taxAmount, cur)); totY += 28;
-  totalLine('Remise', '-' + recuMoney(st.discount, cur)); totY += 28;
-  totalLine('Livraison', recuMoney(st.deliveryFee, cur)); totY += 32;
-  ctx.fillStyle = orange;
-  ctx.fillRect(totX, totY, totW, 44);
-  totalLine('TOTAL À PAYER', recuMoney(t.total, cur), true);
-  totY += 44 + 14;
-  ctx.strokeStyle = '#DCD6C6'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(totX, totY - 7); ctx.lineTo(totX + totW, totY - 7); ctx.stroke();
-  ctx.textAlign = 'left'; ctx.font = '700 15px Poppins'; ctx.fillStyle = ink;
-  ctx.fillText('Acompte requis (' + (Number(st.depositPercent)||0) + '%)', totX, totY + 16);
-  ctx.textAlign = 'right'; ctx.font = '800 17px Poppins'; ctx.fillStyle = '#c97f16';
-  ctx.fillText(recuMoney(t.depositAmount, cur), totX + totW, totY + 16);
-  totY += 16 + 26;
-  totalLine('Solde à la remise du travail', recuMoney(t.balanceAmount, cur));
+  const contactW = boxX - tX - 70;
+  const contacts = [
+    ['phone', st.company.phones],
+    ['web', st.company.email || 'www.jcmultimedia.online'],
+    ['pin', st.company.address]
+  ].filter(c => c[1]);
+  contacts.forEach(([k, v]) => {
+    cy += 22;
+    icon(k, tX + 31, cy);
+    ctx.fillStyle = ink; ctx.font = '15px Poppins'; ctx.textAlign = 'left';
+    ctx.fillText(fitText(v, contactW, '15px Poppins'), tX + 58, cy + 5);
+    cy += 22;
+  });
 
-  // Mention + merci + signature
-  const thanksY = pY + 24;
-  const noticeWidth = totX - tX - 26;
-  ctx.textAlign = 'left'; ctx.fillStyle = ink;
-  const noticeLines = wrapText(
-    "Un acompte d'au moins " + (Number(st.depositPercent)||0) + "% est obligatoire avant le début de la réalisation du travail.",
-    noticeWidth, '700 16px Poppins'
-  );
-  ctx.font = '700 16px Poppins';
-  let noticeY = thanksY;
-  noticeLines.forEach(l => { ctx.fillText(l, tX, noticeY); noticeY += 21; });
-  ctx.font = '15px Poppins'; ctx.fillStyle = muted;
-  ctx.fillText("Merci d'avoir choisi " + company + ".", tX, noticeY + 10);
-
+  /* ---------- Merci + signature (à droite) ---------- */
+  const sx = boxX + boxW/2;
+  ctx.textAlign = 'center'; ctx.fillStyle = ink; ctx.font = '800 40px Poppins';
+  ctx.fillText('Merci !', sx, contactTop + 4);
   if(st.signerName){
-    const sigY = Math.max(thanksY, totY + 60);
-    ctx.textAlign = 'right'; ctx.font = '600 16px Poppins'; ctx.fillStyle = ink;
-    ctx.fillText(st.signerName, tX + tW, sigY - 8);
-    ctx.strokeStyle = ink; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(tX + tW - 180, sigY + 4); ctx.lineTo(tX + tW, sigY + 4); ctx.stroke();
-    ctx.font = '12px Poppins'; ctx.fillStyle = muted;
-    ctx.fillText('SIGNATURE', tX + tW, sigY + 22);
+    fitFont(st.signerName, boxW - 30, 600, 40, '"Dancing Script", "Brush Script MT", cursive', 20);
+    ctx.fillStyle = navy;
+    ctx.fillText(st.signerName, sx, contactTop + 82);
   }
+  ctx.strokeStyle = '#9A9AA6'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(sx - 120, contactTop + 98); ctx.lineTo(sx + 120, contactTop + 98); ctx.stroke();
+  ctx.font = '15px Poppins'; ctx.fillStyle = '#222';
+  ctx.fillText(st.signerName ? 'Signature — ' + company : 'Signature', sx, contactTop + 122);
 
-  // Barre du bas
-  ctx.fillStyle = orange; ctx.fillRect(0, H - 18, W, 18);
-  ctx.fillStyle = navy; ctx.fillRect(0, H - 18, W*0.18, 18);
+  /* ---------- Pied de page : formes diagonales ---------- */
+  ctx.fillStyle = orange;
+  ctx.beginPath();
+  ctx.moveTo(W * 0.20, H); ctx.lineTo(W * 0.66, H - 118); ctx.lineTo(W * 0.69, H - 92); ctx.lineTo(W * 0.31, H);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = navy;
+  ctx.beginPath();
+  ctx.moveTo(W * 0.52, H); ctx.lineTo(W, H - 128); ctx.lineTo(W, H);
+  ctx.closePath(); ctx.fill();
 }
 
 /* ---------- Reçu à partir d'une commande du site ---------- */
