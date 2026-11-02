@@ -201,8 +201,10 @@ function recuRenderShell(){
         </details>
 
         <div class="recu-actions">
-          <button class="btn btn-primary btn-block" id="recuSaveBtn" onclick="recuSaveAndExport('download')">Enregistrer + télécharger le JPG</button>
-          <button class="btn btn-wa btn-block" id="recuShareBtn" onclick="recuSaveAndExport('share')">Enregistrer + partager (WhatsApp…)</button>
+          <button class="btn btn-wa btn-block" id="recuShareBtn" onclick="recuSaveAndExport('share')">Enregistrer + partager l'image (WhatsApp)</button>
+          <button class="btn btn-primary btn-block" id="recuPdfBtn" onclick="recuSaveAndExport('pdf')">Enregistrer + partager en PDF (qualité maximale)</button>
+          <button class="btn btn-ghost btn-block" id="recuSaveBtn" onclick="recuSaveAndExport('download')">Enregistrer + télécharger le JPG (pleine résolution)</button>
+          <p class="card-sub" style="margin:2px 0 0;">Astuce : le PDF arrive sur WhatsApp sans aucune perte de qualité. Pour l'image, appuyez sur « HD » dans WhatsApp avant l'envoi si l'option s'affiche.</p>
           <button class="btn btn-ghost btn-block" onclick="recuNew()">Nouveau reçu</button>
         </div>
       </div>
@@ -378,7 +380,7 @@ async function recuSaveAndExport(mode){
   const items = st.items.filter(i => i.name.trim() || i.description.trim() || Number(i.price));
   if(!items.length){ showToast('Ajoutez au moins un article ou service'); return; }
 
-  const btn = document.getElementById(mode === 'share' ? 'recuShareBtn' : 'recuSaveBtn');
+  const btn = document.getElementById(mode === 'share' ? 'recuShareBtn' : mode === 'pdf' ? 'recuPdfBtn' : 'recuSaveBtn');
   const label = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
   try{
@@ -425,33 +427,92 @@ async function recuSaveAndExport(mode){
   }
 }
 
-function recuCanvasBlob(){
-  const canvas = document.getElementById('recuCanvas');
-  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+/* ---------- Export : JPG (pleine résolution ou format WhatsApp) et PDF ----------
+   WhatsApp réduit toute photo à ~1600 px sur son plus grand côté puis la
+   recompresse. Pour l'image partagée, on dessine DIRECTEMENT le reçu à
+   1600 px (texte net, aucune réduction par WhatsApp) en qualité maximale.
+   Le PDF, lui, est envoyé par WhatsApp comme document : aucune compression. */
+const RECU_WHATSAPP_MAX_SIDE = 1600;
+
+function recuRenderBlob(maxSide, quality){
+  const c = document.createElement('canvas');
+  recuDraw({ canvas: c, maxSide });
+  return new Promise(resolve => c.toBlob(b => resolve({ blob: b, width: c.width, height: c.height }), 'image/jpeg', quality));
 }
-async function recuExport(mode){
-  const blob = await recuCanvasBlob();
-  if(!blob){ showToast("Impossible de créer l'image"); return; }
-  const fileName = `recu-${recuNumberLabel(recuState.number)}.jpg`;
-  if(mode === 'share'){
-    const file = new File([blob], fileName, { type:'image/jpeg' });
-    if(navigator.canShare && navigator.canShare({ files:[file] })){
-      try{
-        await navigator.share({ files:[file], title: `Reçu ${recuNumberLabel(recuState.number)}` });
-        showToast('Reçu enregistré');
-        return;
-      }catch(e){
-        if(e && e.name === 'AbortError'){ showToast('Reçu enregistré (partage annulé)'); return; }
-      }
+
+// PDF d'une page contenant l'image JPEG (format A4 en largeur), sans bibliothèque
+async function recuBuildPdf(){
+  const { blob, width, height } = await recuRenderBlob(null, 0.95);
+  if(!blob) return null;
+  const jpg = new Uint8Array(await blob.arrayBuffer());
+  const pageW = 595.28, pageH = Math.round(pageW * height / width * 100) / 100;
+  const enc = new TextEncoder();
+  const parts = []; const offsets = []; let len = 0;
+  const push = (data) => { const u = typeof data === 'string' ? enc.encode(data) : data; parts.push(u); len += u.length; };
+  const obj = (n, body) => { offsets[n] = len; push(`${n} 0 obj\n${body}\nendobj\n`); };
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+  offsets[4] = len;
+  push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);
+  push(jpg);
+  push('\nendstream\nendobj\n');
+  const content = `q ${pageW} 0 0 ${pageH} 0 0 cm /Im0 Do Q`;
+  obj(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  const xrefPos = len;
+  let xref = 'xref\n0 6\n0000000000 65535 f \n';
+  for(let i = 1; i <= 5; i++) xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+  push(xref + `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
+}
+
+async function recuShareOrDownload(blob, fileName, type){
+  const label = recuNumberLabel(recuState.number);
+  const file = new File([blob], fileName, { type });
+  if(navigator.canShare && navigator.canShare({ files:[file] })){
+    try{
+      await navigator.share({ files:[file], title: `Reçu ${label}` });
+      showToast('Reçu enregistré');
+      return;
+    }catch(e){
+      if(e && e.name === 'AbortError'){ showToast('Reçu enregistré (partage annulé)'); return; }
     }
-    showToast("Partage non disponible ici : l'image est téléchargée.");
   }
+  showToast("Partage non disponible ici : le fichier est téléchargé.");
+  recuDownload(blob, fileName);
+}
+function recuDownload(blob, fileName){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = fileName;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 4000);
-  showToast(`Reçu ${recuNumberLabel(recuState.number)} enregistré`);
+}
+
+async function recuExport(mode){
+  const base = `recu-${recuNumberLabel(recuState.number)}`;
+  try{
+    if(mode === 'pdf'){
+      const pdf = await recuBuildPdf();
+      if(!pdf){ showToast("Impossible de créer le PDF"); return; }
+      await recuShareOrDownload(pdf, base + '.pdf', 'application/pdf');
+      return;
+    }
+    if(mode === 'share'){
+      const { blob } = await recuRenderBlob(RECU_WHATSAPP_MAX_SIDE, 1.0);
+      if(!blob){ showToast("Impossible de créer l'image"); return; }
+      await recuShareOrDownload(blob, base + '.jpg', 'image/jpeg');
+      return;
+    }
+    const { blob } = await recuRenderBlob(null, 0.96);
+    if(!blob){ showToast("Impossible de créer l'image"); return; }
+    recuDownload(blob, base + '.jpg');
+    showToast(`Reçu ${recuNumberLabel(recuState.number)} enregistré`);
+  }catch(e){
+    console.error('recuExport:', e);
+    showToast("Impossible de créer le fichier du reçu");
+  }
 }
 
 /* ---------- Dessin du reçu (modèle « facture » marine et orange) ---------- */
@@ -476,8 +537,9 @@ async function recuWaitFontsThenDraw(){
   recuDraw();
 }
 
-function recuDraw(){
-  const canvas = document.getElementById('recuCanvas');
+function recuDraw(opts){
+  opts = opts || {};
+  const canvas = opts.canvas || document.getElementById('recuCanvas');
   if(!canvas || !recuState) return;
   const ctx = canvas.getContext('2d');
   const st = recuState;
@@ -562,10 +624,13 @@ function recuDraw(){
   const contentBottom = contactTop + 190;
   const H = Math.max(contentBottom + 110, Math.round(W * 1.414));
 
-  const SCALE = 3;
-  canvas.width = W * SCALE;
-  canvas.height = H * SCALE;
+  // Échelle : 3 (pleine résolution) ou ajustée pour que le plus grand côté
+  // fasse exactement opts.maxSide pixels (version WhatsApp).
+  const SCALE = opts.maxSide ? Math.min(3, opts.maxSide / Math.max(W, H)) : 3;
+  canvas.width = Math.round(W * SCALE);
+  canvas.height = Math.round(H * SCALE);
   ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   ctx.textBaseline = 'alphabetic';
 
   ctx.fillStyle = '#FFFFFF';
