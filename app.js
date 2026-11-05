@@ -3291,7 +3291,7 @@ function dashRingsHTML(orders){
   const kinds = [
     { key:'PRC', label:'Produits', color:'var(--dash-main)' },
     { key:'SRC', label:'Services', color:'var(--dash-accent)' },
-    { key:'ORC', label:'Mixtes', color:'#A9B1C6' }
+    { key:'ORC', label:'Mixtes', color:'var(--dash-deep)' }
   ];
   kinds.forEach(k => { k.count = orders.filter(o => String(o.code || '').startsWith('JC-' + k.key)).length; k.amount = orders.filter(o => String(o.code || '').startsWith('JC-' + k.key)).reduce((s,o) => s + (o.total||0), 0); });
   const total = orders.length;
@@ -3450,14 +3450,15 @@ function dashboardCashSectionHTML(confirmedOrders){
   const parts = [
     { key:'en_ligne', label:'En ligne (site)', color:'var(--dash-main)', list: groups.en_ligne },
     { key:'manuel', label:'Confirmé à la main', color:'var(--dash-accent)', list: groups.manuel },
-    { key:'aucun', label:'À classer', color:'#A9B1C6', list: groups.aucun }
+    { key:'aucun', label:'À classer', color:'var(--dash-deep)', list: groups.aucun }
   ].map(p => ({ ...p, amount: sum(p.list) }));
   const maxAmount = Math.max(1, ...parts.map(p => p.amount));
   const totalAmount = parts.reduce((a,p) => a + p.amount, 0);
   const spots = [[58, 42], [26, 34], [34, 74]];
   const bubbles = parts.slice().sort((a,b) => b.amount - a.amount).map((p, i) => {
     const size = p.amount ? Math.round(56 + 74 * Math.sqrt(p.amount / maxAmount)) : 40;
-    return `<div class="dash-bubble" style="width:${size}px;height:${size}px;left:${spots[i][0]}%;top:${spots[i][1]}%;background:${p.color};opacity:${p.amount ? 1 : .35}">${p.list.length}</div>`;
+    const txt = p.color === 'var(--dash-accent)' ? 'var(--dash-on-accent)' : '#fff';
+    return `<div class="dash-bubble" style="width:${size}px;height:${size}px;left:${spots[i][0]}%;top:${spots[i][1]}%;background:${p.color};color:${txt};opacity:${p.amount ? 1 : .35}">${p.list.length}</div>`;
   }).join('');
   return `
     <div class="dash-card">
