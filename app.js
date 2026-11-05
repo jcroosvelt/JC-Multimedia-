@@ -53,7 +53,7 @@ if(SUPABASE_CONFIGURED && !SUPABASE_ENABLED){
    configuré, ou comme repli si la connexion échoue
    ========================================================= */
 const DEFAULT_SETTINGS = {
-  whatsapp: "50934432139", // numéro WhatsApp qui reçoit les commandes
+  whatsapp: "50937320330", // numéro WhatsApp qui reçoit les commandes
   adminPassword: "jcadmin2026", // ⚠️ utilisé UNIQUEMENT si Supabase n'est pas configuré (mode local) — sinon voir Supabase Auth
   exchangeRate: 132, // gourdes (HTG) pour 1 USD — à vérifier/mettre à jour régulièrement depuis l'espace admin
   slideshowAutoplay: true,
@@ -120,11 +120,11 @@ const DEFAULT_SITE_CONTENT = {
   address_2: "10, Brochette 99, Carrefour",
   nif: "0000-000-000-0",
   email: "infos@jcmultimedia.com",
-  phone_display: "+509 34 43 2139 / 42 75 5464",
+  phone_display: "+509 37 32 0330",
   social_facebook: "https://www.facebook.com/share/1FA67rVSu3/",
   social_instagram: "https://www.instagram.com/jcmultimediaht?igsi=MXJiNzlyMmp0aXBkaQ==",
   social_tiktok: "https://tiktok.com/@jc.multimedia",
-  social_whatsapp_number: "50934432139",
+  social_whatsapp_number: "50937320330",
   footer_tagline: "Impression, personnalisation, graphisme et solutions digitales."
 };
 const SITE_CONTENT_STORAGE_KEY = "jc_multimedia_site_content_v1";
@@ -1286,8 +1286,20 @@ async function submitTrackOrder(){
     console.error(e);
   }
 }
+/* Lignes qui ne sont PAS des articles : frais de livraison, taxe, remise.
+   Elles comptent dans le total mais jamais comme un article commandé.
+   (Les anciennes commandes avaient « Frais de livraison » en type services.) */
+function isExtraOrderLine(i){
+  if(!i) return false;
+  const k = i.kind;
+  return k === 'delivery' || k === 'fee' || k === 'discount' || /^frais de livraison$/i.test(String(i.name || '').trim());
+}
+function orderItemLiHTML(i){
+  if(isExtraOrderLine(i)) return `<li class="order-extra-line">${i.kind === 'discount' ? '🏷️' : '🚚'} ${escapeHtml(i.name)}</li>`;
+  return `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`;
+}
 function renderTrackResult(o){
-  const items = (o.items||[]).map(i => `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('');
+  const items = (o.items||[]).map(orderItemLiHTML).join('');
   const history = (o.history||[]).map(h => `<li>${escapeHtml(h.status)} — ${new Date(h.changed_at).toLocaleString('fr-FR')}</li>`).join('');
   document.getElementById('trackResult').innerHTML = `
     <div class="admin-order-card">
@@ -1512,7 +1524,7 @@ function showStepCustomerInfo(){
     </div>
     <div class="form-field">
       <label for="cfPhone">Téléphone *</label>
-      <input type="tel" id="cfPhone" value="${escapeHtml(orderFlow.customerPhone)}" placeholder="Ex : 3443 2139" autocomplete="tel">
+      <input type="tel" id="cfPhone" value="${escapeHtml(orderFlow.customerPhone)}" placeholder="Ex : 3700 1234" autocomplete="tel">
     </div>
     <div class="form-field">
       <label for="cfAddress">Adresse (si livraison)</label>
@@ -2297,7 +2309,7 @@ function renderWaContacts(body){
     <button class="btn btn-ghost" style="margin:8px 0 8px 6px;" onclick="waSelectNone()">Tout désélectionner</button>
     <h4 style="margin-top:14px;">Ajouter un contact manuel</h4>
     <div class="form-field"><label>Nom</label><input type="text" id="waNewContactName" placeholder="Nom"></div>
-    <div class="form-field"><label>Téléphone (format international, ex: +50934432139)</label><input type="text" id="waNewContactPhone" placeholder="+509..."></div>
+    <div class="form-field"><label>Téléphone (format international, ex: +50937320330)</label><input type="text" id="waNewContactPhone" placeholder="+509..."></div>
     <button class="btn btn-primary" onclick="waAddContact()">+ Ajouter</button>
     <h4 style="margin-top:18px;">Tous les contacts (${allContacts.length})</h4>
     ${allContacts.length ? allContacts.map(c => `
@@ -3327,7 +3339,7 @@ function renderDashboardContent(){
   const isPaid = o => o.paymentRecord && o.paymentRecord.status === 'Confirmé';
   const confirmedOrders = orders.filter(isPaid);
   const totalRevenue = confirmedOrders.reduce((s,o) => s + (o.total||0), 0);
-  const itemsQty = list => list.reduce((s,o) => s + (o.items||[]).reduce((a,i) => a + (Number(i.qty)||0), 0), 0);
+  const itemsQty = list => list.reduce((s,o) => s + (o.items||[]).filter(i => !isExtraOrderLine(i)).reduce((a,i) => a + (Number(i.qty)||0), 0), 0);
   const pageViews = getFilteredDashboardPageViews();
 
   // Période précédente (même durée) pour les évolutions en %
@@ -3343,7 +3355,7 @@ function renderDashboardContent(){
   }
 
   const itemCounts = {};
-  orders.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + (Number(i.qty)||0); }));
+  orders.forEach(o => (o.items||[]).filter(i => !isExtraOrderLine(i)).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + (Number(i.qty)||0); }));
   const topItems = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0,5);
   const viewCounts = {};
   pageViews.forEach(v => { if(v.itemId) viewCounts[v.itemId] = (viewCounts[v.itemId]||0) + 1; });
@@ -3980,7 +3992,7 @@ function orderRowHTML(o){
     </div>
     ${o.code ? `<div class="item-code-tag" style="margin:4px 0;">${escapeHtml(o.code)}</div>` : ''}
     <div class="card-sub">${escapeHtml(o.customerPhone)}${o.customerAddress ? ' · ' + escapeHtml(o.customerAddress) : ''}</div>
-    <ul class="admin-list">${(o.items||[]).map(i => `<li>${escapeHtml(i.name)} × ${Number(i.qty)||0}${i.customized ? ' (à personnaliser)' : ''}</li>`).join('')}</ul>
+    <ul class="admin-list">${(o.items||[]).map(orderItemLiHTML).join('')}</ul>
     <div class="cart-total-row"><span>Total</span><span class="amt">${priceDualInline(o.total||0)}</span></div>
     <div class="card-sub">Livraison : ${escapeHtml(o.delivery) || '—'}</div>
     ${o.details ? `<div class="admin-note" style="margin-top:8px;"><strong>Détails demandés par le client :</strong><br>${escapeHtml(o.details).replace(/\n/g,'<br>')}</div>` : ''}
@@ -4086,7 +4098,7 @@ async function exportOrdersCSV(){
   };
   let csv = "Date,Nom,Telephone,Adresse,Articles,Total USD,Total HTG,Taux utilise,Paiement,Livraison\n";
   orders.forEach(o => {
-    const items = (o.items||[]).map(i => `${csvSafe(i.name)} x${Number(i.qty)||0}`).join(' | ');
+    const items = (o.items||[]).map(i => isExtraOrderLine(i) ? csvSafe(i.name) : `${csvSafe(i.name)} x${Number(i.qty)||0}`).join(' | ');
     const rate = o.exchangeRate || SETTINGS.exchangeRate;
     const htgTotal = Number(o.total)||0;
     const usdTotal = rate ? htgTotal / rate : 0;

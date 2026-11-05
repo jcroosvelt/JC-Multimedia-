@@ -8,7 +8,7 @@ const RECU_LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAB9AAAAfQCAY
 const RECU_DEFAULT_COMPANY = {
   name: 'JC Multimedia',
   address: '123, Rue Lambert, Juvénat, Pétion-Ville',
-  phones: '+509 34 43 2139 / 42 75 5464',
+  phones: '+509 37 32 0330',
   email: ''
 };
 const RECU_DEFAULT_PAYMENT = {
@@ -31,6 +31,13 @@ function recuLoadLogo(){
   recuLogoImg.src = RECU_LOGO_SRC;
 }
 
+// Ancien numéro de contact (34 43 2139 / 42 75 5464) remplacé par le nouveau
+// sur les reçus. Les numéros MonCash / NatCash (paiement) ne changent pas.
+function recuFixCompanyPhones(company){
+  const c = { ...company };
+  if(!c.phones || /34\s?43\s?2139|42\s?75\s?5464/.test(c.phones)) c.phones = RECU_DEFAULT_COMPANY.phones;
+  return c;
+}
 function recuBlankState(base){
   return {
     id: null,
@@ -42,7 +49,7 @@ function recuBlankState(base){
     currency: 'HTG',
     items: [{ name:'', description:'', qty:1, price:0 }],
     taxPercent: 0, discount: 0, deliveryFee: 0, depositPercent: 75,
-    company: { ...RECU_DEFAULT_COMPANY, ...((base && base.company) || {}) },
+    company: recuFixCompanyPhones({ ...RECU_DEFAULT_COMPANY, ...((base && base.company) || {}) }),
     payment: { ...RECU_DEFAULT_PAYMENT, ...((base && base.payment) || {}) },
     signerName: (base && base.signerName) || ''
   };
@@ -62,7 +69,7 @@ function recuFromRow(r){
       .map(i => ({ name: i.name || '', description: i.description || '', qty: Number(i.qty)||0, price: Number(i.price)||0 })),
     taxPercent: Number(r.tax_percent)||0, discount: Number(r.discount)||0,
     deliveryFee: Number(r.delivery_fee)||0, depositPercent: Number(r.deposit_percent ?? 75),
-    company: { ...RECU_DEFAULT_COMPANY, ...(r.company || {}) },
+    company: recuFixCompanyPhones({ ...RECU_DEFAULT_COMPANY, ...(r.company || {}) }),
     payment: { ...RECU_DEFAULT_PAYMENT, ...(r.payment_info || {}) },
     signerName: r.signer_name || ''
   };
@@ -208,6 +215,7 @@ function recuRenderShell(){
 
         <div class="recu-actions">
           <button class="btn btn-wa btn-block" id="recuShareBtn" onclick="recuSaveAndExport()">Enregistrer + envoyer le reçu</button>
+          <button class="btn btn-primary btn-block" id="recuLinkBtn" onclick="recuCreatePayLink()">${st.orderId ? '🔗 Voir le lien de paiement' : '🔗 Enregistrer + créer le lien de paiement'}</button>
           <button class="btn btn-ghost btn-block" onclick="recuNew()">Nouveau reçu</button>
         </div>
       </div>
@@ -378,13 +386,17 @@ async function recuDelete(id){
 
 /* ---------- Enregistrement + export ---------- */
 async function recuSaveAndExport(){
+  if(await recuSave('recuShareBtn')) await recuExport();
+}
+// Enregistre le reçu (création ou modification). Renvoie true si c'est fait.
+async function recuSave(btnId){
   recuReadForm();
   const st = recuState;
-  if(!st.clientName){ showToast('Indiquez le nom du client'); return; }
+  if(!st.clientName){ showToast('Indiquez le nom du client'); return false; }
   const items = st.items.filter(i => i.name.trim() || i.description.trim() || Number(i.price));
-  if(!items.length){ showToast('Ajoutez au moins un article ou service'); return; }
+  if(!items.length){ showToast('Ajoutez au moins un article ou service'); return false; }
 
-  const btn = document.getElementById('recuShareBtn');
+  const btn = document.getElementById(btnId || 'recuShareBtn');
   const label = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
   try{
@@ -427,11 +439,68 @@ async function recuSaveAndExport(){
     recuNextNumberHint = Number(recuHistory[0].number) + 1;
     recuRenderShell();
     await recuWaitFontsThenDraw();
-    await recuExport();
+    return true;
   }catch(e){
-    console.error('recuSaveAndExport:', e);
+    console.error('recuSave:', e);
     showToast("Échec de l'enregistrement — vérifiez votre connexion.");
     if(btn){ btn.disabled = false; btn.textContent = label; }
+    return false;
+  }
+}
+
+/* ---------- Reçu → lien de paiement ----------
+   Crée la commande et son lien à partir du reçu (même code ensuite pour les
+   deux), ou réaffiche le lien si le reçu est déjà lié à une commande. */
+async function recuCreatePayLink(){
+  recuReadForm();
+  if(payLinkWaNumber(recuState.clientPhone).length < 8){ showToast('Ajoutez le téléphone WhatsApp du client'); return; }
+  if(!(await recuSave('recuLinkBtn'))) return;
+  const st = recuState;
+  const btn = document.getElementById('recuLinkBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Création du lien…'; }
+  try{
+    if(st.orderId){
+      const { data: o, error } = await db.from('orders').select('id, pay_token').eq('id', st.orderId).single();
+      if(error) throw error;
+      if(!o.pay_token){
+        const { error: uErr } = await db.from('orders').update({ pay_token: payLinkNewToken() }).eq('id', o.id);
+        if(uErr) throw uErr;
+      }
+      await payLinkShare(o.id);
+      return;
+    }
+    // Le paiement en ligne se fait toujours en gourdes
+    const rate = st.currency === '$' ? (Number(SETTINGS.exchangeRate) || 1) : 1;
+    const r2 = n => Math.round(n * 100) / 100;
+    const kindOf = name => {
+      const it = Object.values(ALL_ITEMS || {}).find(x => String(x.name || '').trim().toLowerCase() === String(name).trim().toLowerCase());
+      return it ? (isEstimate(it) ? 'services' : 'products') : 'services';
+    };
+    const lines = st.items.filter(i => i.name.trim() && (Number(i.qty)||0) > 0)
+      .map(i => ({ name: i.name.trim(), qty: Number(i.qty)||0, price: r2((Number(i.price)||0) * rate), kind: kindOf(i.name), catalogId: null, code: null }));
+    if(!lines.length){ showToast('Ajoutez au moins un article avec un nom'); if(btn){ btn.disabled = false; btn.textContent = '🔗 Enregistrer + créer le lien de paiement'; } return; }
+    const t = recuTotals(st);
+    if(t.taxAmount > 0) lines.push({ name: `Taxe (${Number(st.taxPercent)||0} %)`, qty: 1, price: r2(t.taxAmount * rate), kind: 'fee' });
+    if(Number(st.discount) > 0) lines.push({ name: 'Remise', qty: 1, price: -r2(Number(st.discount) * rate), kind: 'discount' });
+    if(Number(st.deliveryFee) > 0) lines.push({ name: 'Frais de livraison', qty: 1, price: r2(Number(st.deliveryFee) * rate), kind: 'delivery' });
+    const total = r2(lines.reduce((a,l) => a + l.qty * l.price, 0));
+    if(total < 20){ showToast("Le total doit être d'au moins 20 HTG (minimum du paiement en ligne)"); if(btn){ btn.disabled = false; btn.textContent = '🔗 Enregistrer + créer le lien de paiement'; } return; }
+    const order = await payLinkInsertOrder({
+      clientName: st.clientName, clientPhone: st.clientPhone, clientAddress: st.clientAddress,
+      delivery: Number(st.deliveryFee) > 0 ? 'Se faire livrer' : 'Récupérer sur place',
+      details: `Créée depuis le reçu ${recuCode(st) || ''}`.trim(), lines, total
+    });
+    const { error: lErr } = await db.from('receipts').update({ order_id: order.id }).eq('id', st.id);
+    if(lErr) throw lErr;
+    st.orderId = order.id; st.orderCode = order.code;
+    const h = recuHistory.find(r => String(r.id) === String(st.id));
+    if(h){ h.order_id = order.id; h.orders = { code: order.code }; }
+    showToast(`Lien créé — le reçu et la commande portent le code ${order.code}`);
+    await payLinkShare(order.id);
+  }catch(e){
+    console.error('recuCreatePayLink:', e);
+    showToast("Impossible de créer le lien — vérifiez votre connexion.");
+    if(btn){ btn.disabled = false; btn.textContent = '🔗 Enregistrer + créer le lien de paiement'; }
   }
 }
 
@@ -836,11 +905,16 @@ async function recuFromOrder(orderId){
     } else {
       const [{ data: order, error: oErr }, { data: lines, error: lErr }] = await Promise.all([
         db.from('orders').select('id, code, customer_name, customer_phone, customer_address, total').eq('id', id).single(),
-        db.from('order_items').select('name, code, quantity, unit_price, customized').eq('order_id', id).order('id', { ascending:true })
+        db.from('order_items').select('name, code, kind, quantity, unit_price, customized').eq('order_id', id).order('id', { ascending:true })
       ]);
       if(oErr) throw oErr;
       if(lErr) throw lErr;
-      const items = (lines || []).map(l => ({
+      // Livraison et remise vont dans leurs cases du reçu, pas dans les articles
+      const isDelivery = l => l.kind === 'delivery' || /^frais de livraison$/i.test(String(l.name || '').trim());
+      const lineSum = l => (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
+      const deliveryFromLines = (lines || []).filter(isDelivery).reduce((a,l) => a + lineSum(l), 0);
+      const discountFromLines = (lines || []).filter(l => l.kind === 'discount').reduce((a,l) => a + Math.abs(lineSum(l)), 0);
+      const items = (lines || []).filter(l => !isDelivery(l) && l.kind !== 'discount').map(l => ({
         name: l.name || '',
         description: [l.code, l.customized ? 'personnalisé' : ''].filter(Boolean).join(' · '),
         qty: Number(l.quantity) || 0,
@@ -854,11 +928,13 @@ async function recuFromOrder(orderId){
       base.clientAddress = order.customer_address || '';
       base.currency = 'HTG';
       if(items.length) base.items = items;
-      // Aligne le total du reçu sur celui de la commande (frais ou remise éventuels)
-      const linesTotal = items.reduce((a,i) => a + i.qty * i.price, 0);
+      base.deliveryFee = Math.round(deliveryFromLines * 100) / 100;
+      base.discount = Math.round(discountFromLines * 100) / 100;
+      // Aligne le total du reçu sur celui de la commande (écart éventuel)
+      const linesTotal = items.reduce((a,i) => a + i.qty * i.price, 0) + base.deliveryFee - base.discount;
       const diff = Math.round(((Number(order.total) || 0) - linesTotal) * 100) / 100;
-      if(diff > 0.009) base.deliveryFee = diff;
-      else if(diff < -0.009) base.discount = -diff;
+      if(diff > 0.009) base.deliveryFee += diff;
+      else if(diff < -0.009) base.discount += -diff;
       recuState = base;
     }
     showAdminTab('recus');
@@ -933,9 +1009,14 @@ async function payLinksRenderList(){
     const list = (orders || []).filter(o => o.pay_token);
     const ids = list.map(o => o.id);
     const paid = new Set();
+    const hasReceipt = new Set();
     if(ids.length){
-      const { data: pays } = await db.from('payments').select('order_id, status').in('order_id', ids);
+      const [{ data: pays }, { data: recs }] = await Promise.all([
+        db.from('payments').select('order_id, status').in('order_id', ids),
+        db.from('receipts').select('order_id').in('order_id', ids)
+      ]);
       (pays || []).forEach(p => { if(p.status === 'Confirmé') paid.add(p.order_id); });
+      (recs || []).forEach(r => hasReceipt.add(r.order_id));
     }
     const stateOf = o => (o.status === 'Annulée' || o.status === 'Refusée') ? 'cancelled' : (paid.has(o.id) ? 'paid' : 'pending');
     const counts = { all: list.length, pending: 0, paid: 0, cancelled: 0 };
@@ -956,7 +1037,10 @@ async function payLinksRenderList(){
           </div>
           <div class="card-sub">${escapeHtml(o.customer_name || 'Client')} · ${escapeHtml(o.customer_phone || '')}</div>
           <div class="card-sub">${escapeHtml(formatHTG(Number(o.total) || 0))} · ${new Date(o.created_at).toLocaleDateString('fr-FR')}</div>
-          ${stateOf(o) === 'pending' ? `<button class="btn btn-ghost" style="margin-top:10px;" onclick="payLinkShare(${Number(o.id)})">🔗 Renvoyer / copier le lien</button>` : ''}
+          <div class="paylink-row-actions">
+            ${stateOf(o) === 'pending' ? `<button class="btn btn-ghost" onclick="payLinkShare(${Number(o.id)})">🔗 Renvoyer / copier le lien</button>` : ''}
+            <button class="btn btn-ghost" onclick="recuFromOrder(${Number(o.id)})">${hasReceipt.has(o.id) ? '🧾 Voir le reçu' : '🧾 Faire le reçu'}</button>
+          </div>
         </div>`).join('') : `<p class="card-sub">${list.length ? 'Aucun lien dans cette catégorie.' : 'Aucun lien de paiement pour le moment.'}</p>`}`;
   }catch(e){
     console.error('payLinksRenderList:', e);
@@ -987,7 +1071,7 @@ function payLinkRenderForm(){
       <h3 style="margin:0 0 6px;">Nouvelle commande WhatsApp</h3>
       <p class="card-sub" style="margin:0 0 12px;">La commande est enregistrée avec un code JC-…, puis tu envoies le lien au client pour qu'il paie par MonCash ou Natcash.</p>
       ${field('pl-name', 'Nom du client *', f.clientName)}
-      ${field('pl-phone', 'Téléphone WhatsApp du client *', f.clientPhone, 'inputmode="tel" placeholder="Ex : 3443 2139"')}
+      ${field('pl-phone', 'Téléphone WhatsApp du client *', f.clientPhone, 'inputmode="tel" placeholder="Ex : 3700 1234"')}
       ${field('pl-address', 'Adresse (optionnel)', f.clientAddress)}
       <div class="form-field">
         <label>Livraison</label>
@@ -1067,6 +1151,50 @@ function payLinkUpdateTotal(){
   if(el) el.innerHTML = `Total à payer : <strong>${escapeHtml(formatHTG(payLinkTotal(payLinkForm)))}</strong> (≈ ${escapeHtml(formatUSD(payLinkTotal(payLinkForm)))})`;
 }
 
+function payLinkNewToken(){
+  // Jeton secret de 40 caractères (fonctionne aussi sur les anciens téléphones)
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+// Crée la commande (source WhatsApp) et ses lignes, renvoie { id, code, token }.
+// Les frais de livraison, taxe et remise ont leur propre type : ils comptent dans
+// le total mais ne sont jamais des articles (ils ne changent pas le code JC-…).
+async function payLinkInsertOrder(o){
+  const token = payLinkNewToken();
+  const { data: order, error } = await db.from('orders').insert({
+    customer_name: o.clientName,
+    customer_phone: o.clientPhone,
+    customer_address: o.clientAddress || null,
+    items: o.lines.map(l => ({ name: l.name.trim(), qty: Number(l.qty)||0, kind: l.kind || 'services', customized: false })),
+    total: o.total,
+    exchange_rate: SETTINGS.exchangeRate,
+    payment: 'Lien de paiement',
+    delivery: o.delivery,
+    details: o.details || null,
+    pay_token: token,
+    source: 'whatsapp'
+  }).select('id, code').single();
+  if(error) throw error;
+  const { error: itemsErr } = await db.from('order_items').insert(o.lines.map(l => ({
+    order_id: order.id,
+    catalog_item_id: l.catalogId || null,
+    kind: l.kind || 'services',
+    code: l.code || null,
+    name: l.name.trim(),
+    unit_price: Number(l.price)||0,
+    is_estimate: false,
+    quantity: Number(l.qty)||0,
+    customized: false,
+    line_total: Math.round((Number(l.qty)||0) * (Number(l.price)||0) * 100) / 100
+  })));
+  if(itemsErr){
+    // Sans lignes, la page de paiement serait vide : on annule la commande.
+    await db.from('orders').delete().eq('id', order.id);
+    throw itemsErr;
+  }
+  return { id: order.id, code: order.code, token };
+}
+
 async function payLinkCreate(){
   payLinkRead();
   const f = payLinkForm;
@@ -1075,50 +1203,20 @@ async function payLinkCreate(){
   const lines = f.lines.filter(l => l.name.trim() && (Number(l.qty)||0) > 0);
   if(!lines.length){ showToast('Ajoutez au moins un article avec un nom'); return; }
   const fee = Number(f.deliveryFee) || 0;
-  const allLines = fee > 0 ? [...lines, { name:'Frais de livraison', qty:1, price:fee, kind:'services', catalogId:null, code:null }] : lines;
+  const allLines = fee > 0 ? [...lines, { name:'Frais de livraison', qty:1, price:fee, kind:'delivery', catalogId:null, code:null }] : lines;
   const total = Math.round(allLines.reduce((a,l) => a + l.qty * l.price, 0) * 100) / 100;
   if(total < 20){ showToast('Le total doit être d\'au moins 20 HTG (minimum du paiement en ligne)'); return; }
 
   const btn = document.getElementById('payLinkCreateBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Création…'; }
   try{
-    // Jeton secret de 40 caractères (fonctionne aussi sur les anciens téléphones)
-    const bytes = crypto.getRandomValues(new Uint8Array(20));
-    const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-    const { data: order, error } = await db.from('orders').insert({
-      customer_name: f.clientName,
-      customer_phone: f.clientPhone,
-      customer_address: f.clientAddress || null,
-      items: allLines.map(l => ({ name: l.name.trim(), qty: Number(l.qty)||0, kind: l.kind || 'services', customized: false })),
-      total,
-      exchange_rate: SETTINGS.exchangeRate,
-      payment: 'Lien de paiement',
-      delivery: f.delivery,
-      details: f.details.trim() || null,
-      pay_token: token,
-      source: 'whatsapp'
-    }).select('id, code').single();
-    if(error) throw error;
-    const { error: itemsErr } = await db.from('order_items').insert(allLines.map(l => ({
-      order_id: order.id,
-      catalog_item_id: l.catalogId || null,
-      kind: l.kind || 'services',
-      code: l.code || null,
-      name: l.name.trim(),
-      unit_price: Number(l.price)||0,
-      is_estimate: false,
-      quantity: Number(l.qty)||0,
-      customized: false,
-      line_total: Math.round((Number(l.qty)||0) * (Number(l.price)||0) * 100) / 100
-    })));
-    if(itemsErr){
-      // Sans lignes, la page de paiement serait vide : on annule la commande.
-      await db.from('orders').delete().eq('id', order.id);
-      throw itemsErr;
-    }
+    const order = await payLinkInsertOrder({
+      clientName: f.clientName, clientPhone: f.clientPhone, clientAddress: f.clientAddress,
+      delivery: f.delivery, details: f.details.trim(), lines: allLines, total
+    });
     payLinkForm = null;
     await renderAdminPayLinks();
-    payLinkShowResult({ id: order.id, code: order.code, token, total, name: f.clientName, phone: f.clientPhone });
+    payLinkShowResult({ id: order.id, code: order.code, token: order.token, total, name: f.clientName, phone: f.clientPhone });
   }catch(e){
     console.error('payLinkCreate:', e);
     showToast("Échec de la création — vérifiez votre connexion.");
@@ -1143,6 +1241,7 @@ function payLinkShowResult(r){
       <div class="recu-actions">
         <a class="btn btn-wa btn-block" href="https://wa.me/${wa}?text=${encodeURIComponent(payLinkMessage(r))}" target="_blank" rel="noopener">Envoyer au client sur WhatsApp</a>
         <button class="btn btn-ghost btn-block" onclick="payLinkCopy()">Copier le lien</button>
+        <button class="btn btn-ghost btn-block" onclick="recuFromOrder(${Number(r.id)})">🧾 Faire / voir le reçu</button>
         <button class="btn btn-ghost btn-block" onclick="payLinkClose()">Fermer</button>
       </div>
     </div>`;

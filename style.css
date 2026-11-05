@@ -785,3 +785,6 @@ body[data-page="admin"] .dash-note{font-size:.75rem; color:var(--dash-muted); ma
 body[data-page="admin"] .dash-top, body[data-page="admin"] .dash-legend{padding-left:0; margin-left:0; list-style:none;}
 body[data-page="admin"] .dash-top li, body[data-page="admin"] .dash-legend li{margin:0; padding:0;}
 body[data-page="admin"] .dash-details .card-sub{font-size:.8rem; line-height:1.45;}
+.paylink-row-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+.paylink-row-actions .btn{padding:9px 14px; font-size:.85rem;}
+.order-extra-line{color:var(--muted); list-style:none;}
