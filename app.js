@@ -2200,7 +2200,12 @@ function showAdminTab(name){
     const panel = document.getElementById('adminTab-'+t);
     if(panel) panel.style.display = (t===name) ? 'block' : 'none';
   });
-  document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+  document.querySelectorAll('.admin-tab[data-tab]').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+  // En-tête de l'admin : titre de l'onglet, menu refermé sur téléphone
+  const admTitle = document.getElementById('admTitle');
+  const admLink = document.querySelector(`.adm-link[data-tab="${name}"]`);
+  if(admTitle && admLink) admTitle.textContent = admLink.dataset.label || admLink.textContent.trim();
+  if(typeof admCloseSide === 'function') admCloseSide();
   if(name==='dashboard') renderAdminDashboard();
   if(name==='catalog') renderAdminCatalog();
   if(name==='content') renderAdminContent();
@@ -3193,65 +3198,220 @@ function setDashboardCustomRange(){
   ADMIN_DASHBOARD_CUSTOM_TO = document.getElementById('dashTo').value;
   renderDashboardContent();
 }
+/* ---- Tableau de bord (design « cartes » : chiffres clés, graphiques) ---- */
+const DASH_ICONS = {
+  cash:'<path d="M3 7h18v10H3z"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/>',
+  orders:'<path d="M6 2h12l2 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/><path d="M4 6h16"/><path d="M9 11h6M9 15h6"/>',
+  visits:'<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  items:'<path d="M21 8 12 3 3 8l9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>'
+};
+function dashIcon(k){ return `<span class="dash-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${DASH_ICONS[k]}</svg></span>`; }
+function dashPrevRange(){
+  const { from, to } = getDashboardDateRange();
+  if(from == null) return null;
+  const end = to != null ? to : Date.now();
+  const len = Math.max(1, end - from);
+  return { from: from - len, to: from - 1 };
+}
+function dashTrend(cur, prev){
+  if(prev == null) return '';
+  if(!prev && !cur) return '';
+  if(!prev) return `<span class="dash-badge up">Nouveau</span>`;
+  const pct = (cur - prev) / prev * 100;
+  const txt = (pct >= 0 ? '+' : '') + pct.toFixed(1).replace('.', ',') + ' %';
+  return `<span class="dash-badge ${pct >= 0 ? 'up' : 'down'}">${txt}</span>`;
+}
+function dashShort(n){
+  n = Number(n) || 0;
+  if(n >= 1e6) return (n/1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.', ',') + ' M';
+  if(n >= 1e3) return Math.round(n/1e3) + ' k';
+  return String(Math.round(n));
+}
+function dashKpi(k, label, value, sub, trend, highlight){
+  return `<div class="dash-kpi ${highlight ? 'hl' : ''}">
+    <div class="dash-kpi-top">${dashIcon(k)}${trend}</div>
+    <div class="dash-kpi-label">${label}</div>
+    <div class="dash-kpi-row"><span class="dash-kpi-val">${value}</span>${sub ? `<span class="dash-kpi-sub">${sub}</span>` : ''}</div>
+  </div>`;
+}
+// Barres : 7 derniers mois — total commandé (gris) et encaissé (couleur)
+function dashBarsHTML(allOrders){
+  const now = new Date();
+  const months = [];
+  for(let i = 6; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ y: d.getFullYear(), m: d.getMonth(), label: d.toLocaleDateString('fr-FR', { month:'short' }).replace('.', ''), ordered: 0, cashed: 0, count: 0 });
+  }
+  allOrders.forEach(o => {
+    const d = new Date(o.date);
+    const mo = months.find(x => x.y === d.getFullYear() && x.m === d.getMonth());
+    if(!mo) return;
+    mo.ordered += o.total || 0; mo.count++;
+    if(o.paymentRecord && o.paymentRecord.status === 'Confirmé') mo.cashed += o.total || 0;
+  });
+  const max = Math.max(1, ...months.map(x => x.ordered));
+  const step = Math.pow(10, Math.floor(Math.log10(max)));
+  const top = Math.ceil(max / step) * step;
+  const ticks = [0, .25, .5, .75, 1].map(f => top * f);
+  const H = 180;
+  return `
+    <div class="dash-bars" role="img" aria-label="Commandes et encaissements des 7 derniers mois">
+      <div class="dash-bars-y">${ticks.slice().reverse().map(t => `<span>${dashShort(t)}</span>`).join('')}</div>
+      <div class="dash-bars-plot">
+        ${ticks.map((t, i) => `<div class="dash-grid" style="bottom:${i*25}%"></div>`).join('')}
+        <div class="dash-bars-cols">
+          ${months.map((mo, i) => `
+            <button class="dash-col" onclick="dashShowBar(this)" data-label="${mo.label} ${mo.y}" data-ordered="${formatHTG(mo.ordered)}" data-cashed="${formatHTG(mo.cashed)}" data-count="${mo.count}">
+              <span class="dash-bar gray" style="height:${Math.max(2, mo.ordered / top * H)}px"></span>
+              <span class="dash-bar main" style="height:${Math.max(2, mo.cashed / top * H)}px"></span>
+            </button>`).join('')}
+        </div>
+        <div class="dash-tip" id="dashTip" hidden></div>
+      </div>
+    </div>
+    <div class="dash-bars-x">${months.map(mo => `<span>${mo.label}</span>`).join('')}</div>`;
+}
+function dashShowBar(btn){
+  const tip = document.getElementById('dashTip');
+  if(!tip) return;
+  document.querySelectorAll('.dash-col.on').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  tip.innerHTML = `<strong>${escapeHtml(btn.dataset.label)}</strong>
+    <div><i class="dot gray"></i>${escapeHtml(btn.dataset.ordered)} commandés (${escapeHtml(btn.dataset.count)})</div>
+    <div><i class="dot main"></i>${escapeHtml(btn.dataset.cashed)} encaissés</div>`;
+  tip.hidden = false;
+  const plot = btn.closest('.dash-bars-plot');
+  const r = btn.getBoundingClientRect(), pr = plot.getBoundingClientRect();
+  let left = r.left - pr.left + r.width/2 - tip.offsetWidth/2;
+  left = Math.max(0, Math.min(left, pr.width - tip.offsetWidth));
+  tip.style.left = left + 'px';
+}
+// Anneaux : répartition des commandes (produits / services / mixtes)
+function dashRingsHTML(orders){
+  const kinds = [
+    { key:'PRC', label:'Produits', color:'var(--dash-main)' },
+    { key:'SRC', label:'Services', color:'var(--dash-accent)' },
+    { key:'ORC', label:'Mixtes', color:'#9AA3BF' }
+  ];
+  kinds.forEach(k => { k.count = orders.filter(o => String(o.code || '').startsWith('JC-' + k.key)).length; k.amount = orders.filter(o => String(o.code || '').startsWith('JC-' + k.key)).reduce((s,o) => s + (o.total||0), 0); });
+  const total = orders.length;
+  const max = Math.max(1, ...kinds.map(k => k.count));
+  const R = [86, 66, 46];
+  const arcs = kinds.map((k, i) => {
+    const r = R[i], c = 2 * Math.PI * r, full = c * 0.75;
+    const len = full * (k.count / max);
+    return `<circle cx="100" cy="100" r="${r}" fill="none" stroke="#E7E9F2" stroke-width="13" stroke-linecap="round" stroke-dasharray="${full} ${c}" transform="rotate(135 100 100)"/>
+            ${k.count ? `<circle cx="100" cy="100" r="${r}" fill="none" stroke="${k.color}" stroke-width="13" stroke-linecap="round" stroke-dasharray="${len} ${c}" transform="rotate(135 100 100)"/>` : ''}`;
+  }).join('');
+  return `
+    <div class="dash-rings">
+      <svg viewBox="0 0 200 200" role="img" aria-label="Répartition des commandes">${arcs}</svg>
+      <div class="dash-rings-center"><strong>${total}</strong><span>commande${total>1?'s':''}</span></div>
+    </div>
+    <ul class="dash-legend">
+      ${kinds.map(k => `<li><i class="dot" style="background:${k.color}"></i><span>${k.label}</span><strong>${k.count}</strong><span class="dash-badge neutral">${total ? Math.round(k.count / total * 100) : 0} %</span></li>`).join('')}
+    </ul>`;
+}
+function dashTopListHTML(rows, emptyText, unit){
+  if(!rows.length) return `<p class="card-sub">${emptyText}</p>`;
+  const max = Math.max(...rows.map(r => r[1]));
+  return `<ul class="dash-top">${rows.map(([name, n]) => `
+    <li><div class="dash-top-row"><span>${escapeHtml(name)}</span><strong>${n}${unit ? ' ' + unit : ''}</strong></div>
+    <div class="dash-meter"><span style="width:${Math.max(4, n / max * 100)}%"></span></div></li>`).join('')}</ul>`;
+}
+
 function renderDashboardContent(){
   const el = document.getElementById('adminTab-dashboard');
+  const all = ADMIN_DASHBOARD_ORDERS_CACHE || [];
   const orders = getFilteredDashboardOrders();
-  const totalOrders = orders.length;
-  // Seules les commandes au paiement confirmé comptent comme revenu
-  // réel — une commande passée n'est pas de l'argent encaissé tant
-  // que son paiement n'a pas été validé (webhook ou admin).
-  const confirmedOrders = orders.filter(o => o.paymentRecord && o.paymentRecord.status === 'Confirmé');
-  const totalRevenue = confirmedOrders.reduce((s,o)=> s + (o.total||0), 0);
-  const itemCounts = {};
-  orders.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + i.qty; }));
-  const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
-
+  const isPaid = o => o.paymentRecord && o.paymentRecord.status === 'Confirmé';
+  const confirmedOrders = orders.filter(isPaid);
+  const totalRevenue = confirmedOrders.reduce((s,o) => s + (o.total||0), 0);
+  const itemsQty = list => list.reduce((s,o) => s + (o.items||[]).reduce((a,i) => a + (Number(i.qty)||0), 0), 0);
   const pageViews = getFilteredDashboardPageViews();
-  const totalVisits = pageViews.length;
+
+  // Période précédente (même durée) pour les évolutions en %
+  const prev = dashPrevRange();
+  let pOrders = null, pRevenue = null, pVisits = null, pItems = null;
+  if(prev){
+    const inPrev = d => d >= prev.from && d <= prev.to;
+    const po = all.filter(o => inPrev(o.date));
+    pOrders = po.length;
+    pRevenue = po.filter(isPaid).reduce((s,o) => s + (o.total||0), 0);
+    pItems = itemsQty(po);
+    pVisits = (ADMIN_DASHBOARD_PAGEVIEWS_CACHE || []).filter(v => inPrev(v.date)).length;
+  }
+
+  const itemCounts = {};
+  orders.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + (Number(i.qty)||0); }));
+  const topItems = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0,5);
   const viewCounts = {};
   pageViews.forEach(v => { if(v.itemId) viewCounts[v.itemId] = (viewCounts[v.itemId]||0) + 1; });
   const topViewed = Object.entries(viewCounts)
-    .map(([id,count]) => ({ item: ALL_ITEMS[id], count }))
-    .filter(x => x.item)
-    .sort((a,b)=>b.count-a.count)
-    .slice(0,5);
-
-  const noteText = SUPABASE_ENABLED
-    ? "Ces statistiques comptent toutes les commandes et visites reçues via Supabase, quel que soit l'appareil utilisé par vos clients."
-    : "Ces statistiques ne comptent que les commandes envoyées depuis <strong>cet appareil</strong> — Supabase n'est pas encore configuré. Voir le fichier schema-supabase.sql pour centraliser les commandes de tous vos clients.";
+    .map(([id,count]) => [ALL_ITEMS[id] ? ALL_ITEMS[id].name : null, count])
+    .filter(x => x[0]).sort((a,b) => b[1]-a[1]).slice(0,5);
 
   const periods = [
-    {key:'today', label:"Aujourd'hui"},
-    {key:'7j', label:'7 jours'},
-    {key:'30j', label:'30 jours'},
-    {key:'mois', label:'Ce mois-ci'},
-    {key:'all', label:'Tout'}
+    {key:'today', label:"Aujourd'hui"}, {key:'7j', label:'7 derniers jours'}, {key:'30j', label:'30 derniers jours'},
+    {key:'mois', label:'Ce mois-ci'}, {key:'all', label:'Depuis le début'}, {key:'custom', label:'Personnalisé…'}
   ];
+  const cmpNote = prev ? 'Évolution comparée à la période précédente de même durée.' : '';
+  const htgParts = n => { const t = formatHTG(n); const m = t.match(/^(.*?)\s*(HTG)$/); return m ? `${m[1]}<small> HTG</small>` : t; };
 
   el.innerHTML = `
-    <div class="admin-note">${noteText}</div>
-    <div class="admin-tabs" style="margin-bottom:14px;">
-      ${periods.map(p => `<button class="admin-tab ${ADMIN_DASHBOARD_PERIOD===p.key?'active':''}" onclick="setDashboardPeriod('${p.key}')">${p.label}</button>`).join('')}
-      <button class="admin-tab ${ADMIN_DASHBOARD_PERIOD==='custom'?'active':''}" onclick="toggleDashboardCustomRange()">Personnalisé</button>
+    <div class="dash-toolbar">
+      <label class="dash-select"><span>Période</span>
+        <select onchange="this.value==='custom' ? toggleDashboardCustomRange() : setDashboardPeriod(this.value)">
+          ${periods.map(p => `<option value="${p.key}" ${ADMIN_DASHBOARD_PERIOD===p.key?'selected':''}>${p.label}</option>`).join('')}
+        </select>
+      </label>
+      <div id="dashboardCustomRange" class="dash-range" style="display:${ADMIN_DASHBOARD_PERIOD==='custom'?'flex':'none'};">
+        <label>Du <input type="date" id="dashFrom" value="${ADMIN_DASHBOARD_CUSTOM_FROM}" onchange="setDashboardCustomRange()"></label>
+        <label>Au <input type="date" id="dashTo" value="${ADMIN_DASHBOARD_CUSTOM_TO}" onchange="setDashboardCustomRange()"></label>
+      </div>
     </div>
-    <div id="dashboardCustomRange" style="display:${ADMIN_DASHBOARD_PERIOD==='custom'?'flex':'none'}; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
-      <div class="form-field" style="flex:1; min-width:140px;"><label>Du</label><input type="date" id="dashFrom" value="${ADMIN_DASHBOARD_CUSTOM_FROM}" onchange="setDashboardCustomRange()"></div>
-      <div class="form-field" style="flex:1; min-width:140px;"><label>Au</label><input type="date" id="dashTo" value="${ADMIN_DASHBOARD_CUSTOM_TO}" onchange="setDashboardCustomRange()"></div>
+
+    <div class="dash-grid-main">
+      <div class="dash-col-left">
+        <div class="dash-kpis">
+          ${dashKpi('cash', 'Encaissé', htgParts(totalRevenue), `${confirmedOrders.length} paiement${confirmedOrders.length>1?'s':''} confirmé${confirmedOrders.length>1?'s':''}`, dashTrend(totalRevenue, pRevenue), true)}
+          ${dashKpi('orders', 'Commandes', orders.length, 'sur la période', dashTrend(orders.length, pOrders))}
+          ${dashKpi('visits', 'Visites du site', pageViews.length, 'pages vues', dashTrend(pageViews.length, pVisits))}
+          ${dashKpi('items', 'Articles commandés', itemsQty(orders), `${CATALOG.products.length + CATALOG.services.length} au catalogue`, dashTrend(itemsQty(orders), pItems))}
+        </div>
+        ${cmpNote ? `<p class="dash-note">${cmpNote}</p>` : ''}
+
+        <div class="dash-card">
+          <div class="dash-card-head">
+            <div><h3>Ventes des 7 derniers mois</h3><p>Touchez une colonne pour voir le détail</p></div>
+          </div>
+          <div class="dash-legend-inline"><span><i class="dot gray"></i>Commandé</span><span><i class="dot main"></i>Encaissé</span></div>
+          ${dashBarsHTML(all)}
+        </div>
+
+        <div class="dash-two">
+          <div class="dash-card">
+            <div class="dash-card-head"><div><h3>Les plus commandés</h3><p>Quantités sur la période</p></div></div>
+            ${dashTopListHTML(topItems, 'Aucune commande sur cette période.', '')}
+          </div>
+          <div class="dash-card">
+            <div class="dash-card-head"><div><h3>Les plus consultés</h3><p>Visites des fiches produits</p></div></div>
+            ${dashTopListHTML(topViewed, 'Aucune consultation sur cette période.', 'vue(s)')}
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-col-right">
+        <div class="dash-card">
+          <div class="dash-card-head"><div><h3>Types de commandes</h3><p>Produits, services ou les deux</p></div></div>
+          ${dashRingsHTML(orders)}
+        </div>
+        ${dashboardCashSectionHTML(confirmedOrders)}
+      </div>
     </div>
-    <div class="admin-stat-grid">
-      <div class="admin-stat-card"><div class="stat-num">${totalOrders}</div><div class="stat-label">Commandes</div></div>
-      <div class="admin-stat-card"><div class="stat-num">${formatHTG(totalRevenue)}</div><div class="stat-label">Encaissé (paiements confirmés)</div></div>
-      <div class="admin-stat-card"><div class="stat-num">${totalVisits}</div><div class="stat-label">Visites du site</div></div>
-      <div class="admin-stat-card"><div class="stat-num">${CATALOG.products.length + CATALOG.services.length}</div><div class="stat-label">Articles au catalogue</div></div>
-    </div>
-    ${dashboardCashSectionHTML(confirmedOrders)}
-    <h3>Articles les plus commandés</h3>
-    ${topItems.length ? '<ul class="admin-list">' + topItems.map(([n,q])=>`<li>${escapeHtml(n)} — ${q}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune commande sur cette période.</p>'}
-    <h3>Produits et services les plus consultés</h3>
-    <div class="admin-note">Compte chaque visite d'une fiche produit/service, même sans commande.</div>
-    ${topViewed.length ? '<ul class="admin-list">' + topViewed.map(x=>`<li>${escapeHtml(x.item.name)} — ${x.count} consultation${x.count>1?'s':''}</li>`).join('') + '</ul>' : '<p class="card-sub">Aucune consultation enregistrée sur cette période.</p>'}
   `;
 }
+
 /* ---- Encaissements : en ligne (PLOP PLOP) vs confirmés à la main ----
    payments.confirmation est rempli automatiquement par la base :
    'en_ligne' quand le webhook confirme, 'manuel' quand l'admin
@@ -3286,17 +3446,37 @@ function dashboardCashSectionHTML(confirmedOrders){
       </div>
     </div>`;
   }).join('');
+  // Bulles proportionnelles aux montants
+  const parts = [
+    { key:'en_ligne', label:'En ligne (site)', color:'var(--dash-main)', list: groups.en_ligne },
+    { key:'manuel', label:'Confirmé à la main', color:'var(--dash-accent)', list: groups.manuel },
+    { key:'aucun', label:'À classer', color:'#9AA3BF', list: groups.aucun }
+  ].map(p => ({ ...p, amount: sum(p.list) }));
+  const maxAmount = Math.max(1, ...parts.map(p => p.amount));
+  const totalAmount = parts.reduce((a,p) => a + p.amount, 0);
+  const spots = [[58, 42], [26, 34], [34, 74]];
+  const bubbles = parts.slice().sort((a,b) => b.amount - a.amount).map((p, i) => {
+    const size = p.amount ? Math.round(56 + 74 * Math.sqrt(p.amount / maxAmount)) : 40;
+    return `<div class="dash-bubble" style="width:${size}px;height:${size}px;left:${spots[i][0]}%;top:${spots[i][1]}%;background:${p.color};opacity:${p.amount ? 1 : .35}">${p.list.length}</div>`;
+  }).join('');
   return `
-    <h3>Encaissements</h3>
-    <div class="admin-note">« En ligne » = payé sur le site par MonCash/Natcash et confirmé automatiquement. « À la main » = paiement que tu as passé toi-même à « Confirmé ». Tu peux corriger le classement de chaque paiement ci-dessous.</div>
-    <div class="admin-stat-grid">
-      ${card(formatHTG(sum(groups.en_ligne)), 'Encaissé en ligne (site)', plural(groups.en_ligne.length))}
-      ${card(formatHTG(sum(groups.manuel)), 'Confirmé à la main', plural(groups.manuel.length))}
-      ${groups.aucun.length ? card(formatHTG(sum(groups.aucun)), 'À classer', plural(groups.aucun.length) + ' d\'avant ce suivi') : ''}
+    <div class="dash-card">
+      <div class="dash-card-head"><div><h3>Encaissements</h3><p>En ligne ou confirmés à la main</p></div></div>
+      <div class="dash-bubbles-wrap">
+        <div class="dash-bubbles">${bubbles}</div>
+        <ul class="dash-legend dash-legend-bars">
+          ${parts.filter(p => p.key !== 'aucun' || p.list.length).map(p => `<li>
+            <div class="dash-legend-line"><i class="dot" style="background:${p.color}"></i><span>${p.label}</span><strong>${formatHTG(p.amount)}</strong></div>
+            <div class="dash-meter"><span style="width:${totalAmount ? Math.max(3, p.amount / totalAmount * 100) : 0}%;background:${p.color}"></span></div>
+            <div class="card-sub">${plural(p.list.length)}</div>
+          </li>`).join('')}
+        </ul>
+      </div>
+      ${confirmedOrders.length
+        ? `<details class="recu-details dash-details" ${groups.aucun.length ? 'open' : ''}><summary>Détail et classement des paiements (${confirmedOrders.length})</summary>
+            <p class="card-sub">« En ligne » = payé sur le site et confirmé automatiquement. « À la main » = passé par toi à « Confirmé ». Tu peux corriger chaque paiement.</p>${rows}</details>`
+        : '<p class="card-sub">Aucun paiement confirmé sur cette période.</p>'}
     </div>
-    ${confirmedOrders.length
-      ? `<details class="recu-details" ${groups.aucun.length ? 'open' : ''}><summary>Détail des paiements confirmés (${confirmedOrders.length})</summary>${rows}</details>`
-      : '<p class="card-sub">Aucun paiement confirmé sur cette période.</p>'}
   `;
 }
 async function dashSetConfirmation(paymentId, value){
