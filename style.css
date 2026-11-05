@@ -788,3 +788,5 @@ body[data-page="admin"] .dash-details .card-sub{font-size:.8rem; line-height:1.4
 .paylink-row-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
 .paylink-row-actions .btn{padding:9px 14px; font-size:.85rem;}
 .order-extra-line{color:var(--muted); list-style:none;}
+.recu-main-actions{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.recu-main-actions .btn{justify-content:center; text-align:center; padding:13px 10px;}

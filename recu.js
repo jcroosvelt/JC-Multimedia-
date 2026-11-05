@@ -214,8 +214,10 @@ function recuRenderShell(){
         </details>
 
         <div class="recu-actions">
-          <button class="btn btn-wa btn-block" id="recuShareBtn" onclick="recuSaveAndExport()">Enregistrer + envoyer le reçu</button>
-          <button class="btn btn-primary btn-block" id="recuLinkBtn" onclick="recuCreatePayLink()">${st.orderId ? '🔗 Voir le lien de paiement' : '🔗 Enregistrer + créer le lien de paiement'}</button>
+          <div class="recu-main-actions">
+            <button class="btn btn-wa" id="recuShareBtn" onclick="recuSaveAndExport()">🧾 Envoyer le reçu</button>
+            <button class="btn btn-primary" id="recuLinkBtn" onclick="recuCreatePayLink()">${st.orderId ? '🔗 Voir le lien' : '🔗 Créer le lien'}</button>
+          </div>
           <button class="btn btn-ghost btn-block" onclick="recuNew()">Nouveau reçu</button>
         </div>
       </div>
@@ -355,6 +357,7 @@ function recuRenderHistory(){
       </div>
       <div style="display:flex; gap:6px;">
         <button class="btn btn-ghost" onclick="recuOpen('${escapeHtml(String(r.id))}')">Ouvrir</button>
+        <button class="btn btn-ghost" onclick="recuLinkFromHistory('${escapeHtml(String(r.id))}')" title="${r.order_id ? 'Voir le lien de paiement' : 'Créer le lien de paiement'}">🔗 Lien</button>
         <button class="btn btn-ghost" onclick="recuDelete('${escapeHtml(String(r.id))}')" aria-label="Supprimer">🗑</button>
       </div>
     </div>
@@ -448,6 +451,11 @@ async function recuSave(btnId){
   }
 }
 
+// Depuis l'historique : ouvre le reçu puis crée (ou affiche) son lien
+async function recuLinkFromHistory(id){
+  recuOpen(id);
+  await recuCreatePayLink();
+}
 /* ---------- Reçu → lien de paiement ----------
    Crée la commande et son lien à partir du reçu (même code ensuite pour les
    deux), ou réaffiche le lien si le reçu est déjà lié à une commande. */
@@ -478,13 +486,13 @@ async function recuCreatePayLink(){
     };
     const lines = st.items.filter(i => i.name.trim() && (Number(i.qty)||0) > 0)
       .map(i => ({ name: i.name.trim(), qty: Number(i.qty)||0, price: r2((Number(i.price)||0) * rate), kind: kindOf(i.name), catalogId: null, code: null }));
-    if(!lines.length){ showToast('Ajoutez au moins un article avec un nom'); if(btn){ btn.disabled = false; btn.textContent = '🔗 Enregistrer + créer le lien de paiement'; } return; }
+    if(!lines.length){ showToast('Ajoutez au moins un article avec un nom'); if(btn){ btn.disabled = false; btn.textContent = '🔗 Créer le lien'; } return; }
     const t = recuTotals(st);
     if(t.taxAmount > 0) lines.push({ name: `Taxe (${Number(st.taxPercent)||0} %)`, qty: 1, price: r2(t.taxAmount * rate), kind: 'fee' });
     if(Number(st.discount) > 0) lines.push({ name: 'Remise', qty: 1, price: -r2(Number(st.discount) * rate), kind: 'discount' });
     if(Number(st.deliveryFee) > 0) lines.push({ name: 'Frais de livraison', qty: 1, price: r2(Number(st.deliveryFee) * rate), kind: 'delivery' });
     const total = r2(lines.reduce((a,l) => a + l.qty * l.price, 0));
-    if(total < 20){ showToast("Le total doit être d'au moins 20 HTG (minimum du paiement en ligne)"); if(btn){ btn.disabled = false; btn.textContent = '🔗 Enregistrer + créer le lien de paiement'; } return; }
+    if(total < 20){ showToast("Le total doit être d'au moins 20 HTG (minimum du paiement en ligne)"); if(btn){ btn.disabled = false; btn.textContent = '🔗 Créer le lien'; } return; }
     const order = await payLinkInsertOrder({
       clientName: st.clientName, clientPhone: st.clientPhone, clientAddress: st.clientAddress,
       delivery: Number(st.deliveryFee) > 0 ? 'Se faire livrer' : 'Récupérer sur place',
@@ -500,7 +508,7 @@ async function recuCreatePayLink(){
   }catch(e){
     console.error('recuCreatePayLink:', e);
     showToast("Impossible de créer le lien — vérifiez votre connexion.");
-    if(btn){ btn.disabled = false; btn.textContent = '🔗 Enregistrer + créer le lien de paiement'; }
+    if(btn){ btn.disabled = false; btn.textContent = '🔗 Créer le lien'; }
   }
 }
 
