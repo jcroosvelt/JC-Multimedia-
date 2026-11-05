@@ -3291,7 +3291,7 @@ function dashRingsHTML(orders){
   const kinds = [
     { key:'PRC', label:'Produits', color:'var(--dash-main)' },
     { key:'SRC', label:'Services', color:'var(--dash-accent)' },
-    { key:'ORC', label:'Mixtes', color:'#9AA3BF' }
+    { key:'ORC', label:'Mixtes', color:'#A9B1C6' }
   ];
   kinds.forEach(k => { k.count = orders.filter(o => String(o.code || '').startsWith('JC-' + k.key)).length; k.amount = orders.filter(o => String(o.code || '').startsWith('JC-' + k.key)).reduce((s,o) => s + (o.total||0), 0); });
   const total = orders.length;
@@ -3450,7 +3450,7 @@ function dashboardCashSectionHTML(confirmedOrders){
   const parts = [
     { key:'en_ligne', label:'En ligne (site)', color:'var(--dash-main)', list: groups.en_ligne },
     { key:'manuel', label:'Confirmé à la main', color:'var(--dash-accent)', list: groups.manuel },
-    { key:'aucun', label:'À classer', color:'#9AA3BF', list: groups.aucun }
+    { key:'aucun', label:'À classer', color:'#A9B1C6', list: groups.aucun }
   ].map(p => ({ ...p, amount: sum(p.list) }));
   const maxAmount = Math.max(1, ...parts.map(p => p.amount));
   const totalAmount = parts.reduce((a,p) => a + p.amount, 0);
