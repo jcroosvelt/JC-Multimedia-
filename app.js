@@ -1828,7 +1828,7 @@ function renderPayLink(){
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="btn btn-primary" id="payLinkMoncash" onclick="payLinkPay('moncash')">MonCash</button>
           <button class="btn btn-wa" id="payLinkNatcash" onclick="payLinkPay('natcash')">Natcash</button>
-          <button class="btn btn-ghost" id="payLinkCarte" onclick="payLinkPay('carte')">💳 Carte bancaire</button>
+          <button class="btn btn-ghost" id="payLinkCarte" onclick="payLinkPay('carte')">Carte bancaire</button>
         </div>
         <p class="card-sub" style="margin-top:6px;">Carte Visa / Mastercard : le montant est converti et débité en dollars US (USD).</p>
       </div>
