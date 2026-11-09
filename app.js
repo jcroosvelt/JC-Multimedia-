@@ -1726,6 +1726,7 @@ async function initPaymentReturnPage(){
           <label>Réessayer avec</label>
           <button class="opt-btn" onclick="retryPayment('moncash')">MonCash</button>
           <button class="opt-btn" onclick="retryPayment('natcash')">NatCash</button>
+          <button class="opt-btn" onclick="retryPayment('carte')">Carte bancaire</button>
         </div>
         <p id="retryStatus" class="card-sub" style="margin-top:8px;"></p>
       `;
@@ -1827,7 +1828,9 @@ function renderPayLink(){
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="btn btn-primary" id="payLinkMoncash" onclick="payLinkPay('moncash')">MonCash</button>
           <button class="btn btn-wa" id="payLinkNatcash" onclick="payLinkPay('natcash')">Natcash</button>
+          <button class="btn btn-ghost" id="payLinkCarte" onclick="payLinkPay('carte')">💳 Carte bancaire</button>
         </div>
+        <p class="card-sub" style="margin-top:6px;">Carte Visa / Mastercard : le montant est converti et débité en dollars US (USD).</p>
       </div>
       <p class="card-sub" id="payLinkStatus">Vous serez redirigé vers la page de paiement sécurisée, puis de retour sur notre site.</p>`;
   }
@@ -1838,7 +1841,7 @@ async function payLinkPay(method){
   const d = PAY_LINK_DATA;
   if(!d) return;
   const statusEl = document.getElementById('payLinkStatus');
-  const btns = [document.getElementById('payLinkMoncash'), document.getElementById('payLinkNatcash')];
+  const btns = [document.getElementById('payLinkMoncash'), document.getElementById('payLinkNatcash'), document.getElementById('payLinkCarte')];
   btns.forEach(b => { if(b) b.disabled = true; });
   if(statusEl) statusEl.textContent = 'Préparation du paiement…';
   const fail = (msg) => {
@@ -1969,11 +1972,11 @@ function handleCustomizeFileChange(slot){
   document.getElementById('cfile-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
 }
 function showStepPayment(){
-  const options = ["MonCash","Natcash"];
+  const options = ["MonCash","Natcash","Carte bancaire"];
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
     ${options.map(o => `<button class="opt-btn ${orderFlow.payment===o?'selected':''}" onclick="selectPayment('${o}')">${o}</button>`).join('')}
-    <p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.</p>
+    <p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.${orderFlow.payment==='Carte bancaire' ? ' Par carte (Visa / Mastercard), le montant est converti et débité en dollars US (USD).' : ''}</p>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="showStepDelivery()">Retour</button>
       <button class="btn btn-primary" id="paymentNextBtn" onclick="orderFlow.payment ? handleRealPayment() : null">Payer</button>
@@ -2004,7 +2007,7 @@ async function handleRealPayment(){
   const btn = document.getElementById('paymentNextBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Préparation du paiement…'; }
   try{
-    const method = orderFlow.payment === 'Natcash' ? 'natcash' : 'moncash';
+    const method = orderFlow.payment === 'Natcash' ? 'natcash' : (orderFlow.payment === 'Carte bancaire' ? 'carte' : 'moncash');
     const { orderId, orderCode, items, total, payToken } = await createOrderRecord();
 
     if(!orderCode || !payToken){
