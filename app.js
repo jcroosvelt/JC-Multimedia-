@@ -854,7 +854,7 @@ function cardHTML(item){
          ${item.oldPrice ? `<span class="price-old">${formatHTG(item.oldPrice)}</span>` : ''}
        </div>`;
   return `
-    <div class="card">
+    <div class="card" data-card-id="${item.id}">
       <a class="thumb" href="${itemUrlPath(item)}" aria-label="Voir la page de ${name}">
         ${item.specialPercent != null ? `<span class="promo-flag">Spécial -${item.specialPercent}%</span>` : (item.promo ? '<span class="promo-flag">Promo</span>' : '')}
         ${outOfStock ? '<span class="stock-flag">Rupture de stock</span>' : ''}
@@ -867,12 +867,12 @@ function cardHTML(item){
         ${item.isDimensionBased ? `
         <a class="add-btn" style="display:block; text-align:center; text-decoration:none;" href="${itemUrlPath(item)}">Indiquer les dimensions</a>
         ` : `
-        <div class="qty-row">
+        <div class="qty-row" data-qty-row="${item.id}">
           <button class="qty-btn" onclick="stepQty('${item.id}',-1)" aria-label="Diminuer la quantité">−</button>
           <span class="qty-val" data-qty-display="${item.id}">${uiQty[item.id]}</span>
           <button class="qty-btn" onclick="stepQty('${item.id}',1)" aria-label="Augmenter la quantité">+</button>
         </div>
-        <button class="add-btn" id="add-${item.id}" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${item.id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
+        <button class="add-btn" id="add-${item.id}" data-add-id="${item.id}" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${item.id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
         `}
       </div>
     </div>`;
@@ -953,6 +953,7 @@ function renderGrid(){
       promoSection.style.display = 'none';
     }
   }
+  syncCartMarks();
 }
 function stepQty(id, delta){
   uiQty[id] = Math.min(MAX_QTY, Math.max(1, (uiQty[id]||1) + delta));
@@ -1018,16 +1019,12 @@ function addDimensionalToCart(id){
 function addToCart(id){
   const item = ALL_ITEMS[id];
   if(!item || item.inStock === false) return;
-  cart[id] = Math.min(MAX_QTY, (cart[id] || 0) + (uiQty[id]||1));
+  // Un article déjà dans le panier ne peut pas être ajouté à nouveau :
+  // la quantité se modifie dans le panier.
+  if(cart[id] > 0){ showToast(item.name + " est déjà dans votre panier"); return; }
+  cart[id] = Math.min(MAX_QTY, uiQty[id] || 1);
   uiQty[id] = 1;
   document.querySelectorAll(`[data-qty-display="${id}"]`).forEach(el => el.textContent = 1);
-  const btn = document.getElementById('add-'+id);
-  if(btn){
-    const original = btn.textContent;
-    btn.textContent = "Ajouté ✓";
-    btn.classList.add('added');
-    setTimeout(()=>{ btn.textContent = original === "Ajouté ✓" ? "Ajouter au panier" : original; btn.classList.remove('added'); }, 1200);
-  }
   saveCart();
   updateBadge();
   showToast(item.name + " ajouté au panier");
@@ -1037,6 +1034,44 @@ function updateBadge(){
   const badge = document.getElementById('cartBadge');
   if(count > 0){ badge.style.display='flex'; badge.textContent = count; }
   else { badge.style.display='none'; }
+  syncCartMarks();
+}
+/* Articles déjà dans le panier : carte marquée « Dans le panier » et
+   bouton d'ajout bloqué, sur la boutique, les services et la fiche.
+   Tout redevient normal si l'article est retiré du panier. */
+function syncCartMarks(){
+  const inCart = id => (cart[id] || 0) > 0;
+  document.querySelectorAll('[data-add-id]').forEach(btn => {
+    const id = btn.getAttribute('data-add-id');
+    const item = ALL_ITEMS[id];
+    const out = item && item.inStock === false;
+    if(inCart(id)){
+      btn.disabled = true;
+      btn.classList.add('in-cart');
+      btn.textContent = '✓ Dans le panier';
+    } else {
+      btn.classList.remove('in-cart');
+      btn.disabled = !!out;
+      btn.textContent = out ? 'Indisponible' : 'Ajouter au panier';
+    }
+  });
+  document.querySelectorAll('[data-qty-row]').forEach(row => {
+    row.style.display = inCart(row.getAttribute('data-qty-row')) ? 'none' : '';
+  });
+  document.querySelectorAll('[data-card-id]').forEach(card => {
+    const on = inCart(card.getAttribute('data-card-id'));
+    card.classList.toggle('in-cart', on);
+    const thumb = card.querySelector('.thumb');
+    let flag = thumb && thumb.querySelector('.cart-flag');
+    if(on && thumb && !flag){
+      flag = document.createElement('span');
+      flag.className = 'cart-flag';
+      flag.textContent = '✓ Dans le panier';
+      thumb.appendChild(flag);
+    } else if(!on && flag){
+      flag.remove();
+    }
+  });
 }
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -1148,12 +1183,12 @@ function renderItemDetail(id){
     <div id="dimComputedPrice-${id}" class="dim-computed-price"></div>
     <button class="add-btn" style="max-width:280px;" id="dimAddBtn-${id}" disabled onclick="addDimensionalToCart('${id}')">Indiquez les dimensions</button>
     ` : `
-    <div class="qty-row">
+    <div class="qty-row" data-qty-row="${id}">
       <button class="qty-btn" onclick="stepQty('${id}',-1)" aria-label="Diminuer la quantité">−</button>
       <span class="qty-val" data-qty-display="${id}">${uiQty[id]}</span>
       <button class="qty-btn" onclick="stepQty('${id}',1)" aria-label="Augmenter la quantité">+</button>
     </div>
-    <button class="add-btn" style="max-width:280px;" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
+    <button class="add-btn" style="max-width:280px;" data-add-id="${id}" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${id}')">${outOfStock ? 'Indisponible' : 'Ajouter au panier'}</button>
     `}
     <button class="btn btn-ghost" style="margin-top:12px;" onclick="shareItem('${id}')">Partager</button>
 
@@ -1173,6 +1208,7 @@ function renderItemDetail(id){
       <p id="itemReviewMsg-${id}" class="card-sub" style="display:none;"></p>
     </div>
   `;
+  syncCartMarks();
   initItemReviews(id, seoDesc);
 }
 function injectItemStructuredData(item, description, ratingSummary){
