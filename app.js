@@ -1999,8 +1999,10 @@ function handleCustomizeFileChange(slot){
 const PAY_METHODS = [
   { label:"MonCash",        method:"moncash", logo:"/paiement/moncash-bouton.svg", id:"payLinkMoncash" },
   { label:"Natcash",        method:"natcash", logo:"/paiement/natcash.svg", id:"payLinkNatcash" },
-  { label:"Visa / Mastercard", value:"Carte bancaire", method:"carte", logo:"/paiement/carte.svg", id:"payLinkCarte" }
-];
+  { label:"Visa / Mastercard", value:"Carte bancaire", method:"carte", logo:"/paiement/carte.svg", id:"payLinkCarte", hidden:true }
+].filter(m => !m.hidden);
+// Carte masquée : PLOP PLOP répond « Mode de paiement 'carte' non autorisé
+// pour ce marchand ». Retirer hidden:true quand la carte sera activée.
 function payOptInner(m){
   return `<span class="pay-logo pay-logo-${m.method}"><img src="${m.logo}" alt="" width="64" height="40"></span><span class="pay-label">${m.label}</span>`;
 }
