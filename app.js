@@ -1846,7 +1846,7 @@ async function payLinkPay(method){
     if(!data || !data.status || !data.url){
       if(data && data.message === 'already_paid'){ d.paid = true; renderPayLink(); return; }
       if(data && data.message === 'order_cancelled'){ d.status = 'Annulée'; renderPayLink(); return; }
-      fail("Le paiement n'a pas pu démarrer. Réessayez ou choisissez l'autre moyen de paiement.");
+      fail("Le paiement n'a pas pu démarrer" + (data && data.provider_message ? ` (${data.provider_message})` : '') + ". Réessayez ou choisissez un autre moyen de paiement.");
       return;
     }
     safeSet(PAYMENT_SUMMARY_KEY, {
@@ -1963,7 +1963,7 @@ function handleCustomizeFileChange(slot){
 const PAY_METHODS = [
   { label:"MonCash",        method:"moncash", logo:"/paiement/moncash-bouton.svg", id:"payLinkMoncash" },
   { label:"Natcash",        method:"natcash", logo:"/paiement/natcash.svg", id:"payLinkNatcash" },
-  { label:"Carte bancaire", method:"carte",   logo:"/paiement/carte.svg",   id:"payLinkCarte" }
+  { label:"Visa / Mastercard", value:"Carte bancaire", method:"carte", logo:"/paiement/carte.svg", id:"payLinkCarte" }
 ];
 function payOptInner(m){
   return `<span class="pay-logo pay-logo-${m.method}"><img src="${m.logo}" alt="" width="64" height="40"></span><span class="pay-label">${m.label}</span>`;
@@ -1971,7 +1971,7 @@ function payOptInner(m){
 function showStepPayment(){
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
-    ${PAY_METHODS.map(m => `<button class="opt-btn pay-opt ${orderFlow.payment===m.label?'selected':''}" onclick="selectPayment('${m.label}')">${payOptInner(m)}</button>`).join('')}
+    ${PAY_METHODS.map(m => `<button class="opt-btn pay-opt ${orderFlow.payment===(m.value||m.label)?'selected':''}" onclick="selectPayment('${m.value||m.label}')">${payOptInner(m)}</button>`).join('')}
     <p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.${orderFlow.payment==='Carte bancaire' ? ' Par carte (Visa / Mastercard), le montant est converti et débité en dollars US (USD).' : ''}</p>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="showStepDelivery()">Retour</button>
@@ -2023,7 +2023,8 @@ async function handleRealPayment(){
     const data = await resp.json();
 
     if(!data || !data.status || !data.url){
-      showToast("Le paiement en ligne n'a pas pu être initié. Réessayez ou choisissez un autre mode.");
+      const why = data && data.provider_message ? ` (${data.provider_message})` : '';
+      showToast("Le paiement en ligne n'a pas pu être initié" + why + ". Réessayez ou choisissez un autre mode.");
       if(btn){ btn.disabled = false; btn.textContent = 'Payer'; }
       return;
     }
