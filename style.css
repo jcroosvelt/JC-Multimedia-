@@ -395,6 +395,16 @@ footer nav a:hover{color:var(--amber);}
 }
 .opt-btn:hover{border-color:var(--amber);}
 .opt-btn.selected{background:var(--amber); color:#fff; border-color:var(--amber); font-weight:700;}
+/* Moyens de paiement avec logo */
+.opt-btn.pay-opt{display:flex; align-items:center; gap:14px; padding:10px 14px; font-weight:600;}
+.opt-btn.pay-opt:disabled{opacity:.6; cursor:wait;}
+.pay-logo{flex:0 0 auto; width:64px; height:40px; border-radius:8px; background:#fff; border:1px solid var(--line);
+  display:flex; align-items:center; justify-content:center; overflow:hidden;}
+.pay-logo img{display:block; width:100%; height:100%; object-fit:contain;}
+.pay-logo-moncash{background:#E5002B; border-color:#E5002B;}
+.pay-logo-natcash img{width:86%;}
+.pay-logo-carte{background:transparent; border:0;}
+.opt-btn.pay-opt.selected .pay-logo{box-shadow:0 0 0 2px #fff;}
 .check-row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:.92rem; color:var(--text);}
 .check-row input{width:18px;height:18px; accent-color:var(--amber);}
 .modal-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:20px;}

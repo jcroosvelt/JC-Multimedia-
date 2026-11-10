@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 202" role="img" aria-label="Carte bancaire">
+  <defs>
+    <linearGradient id="cb-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16337A"/>
+      <stop offset=".55" stop-color="#0B2158"/>
+      <stop offset="1" stop-color="#071640"/>
+    </linearGradient>
+    <linearGradient id="cb-shine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#FFFFFF" stop-opacity=".09"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="cb-chip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFE29A"/>
+      <stop offset=".5" stop-color="#F9B826"/>
+      <stop offset="1" stop-color="#C98A10"/>
+    </linearGradient>
+    <clipPath id="cb-clip"><rect width="320" height="202" rx="18"/></clipPath>
+  </defs>
+  <g clip-path="url(#cb-clip)">
+    <rect width="320" height="202" fill="url(#cb-bg)"/>
+    <circle cx="300" cy="-10" r="120" fill="#7A1F35" opacity=".55"/>
+    <circle cx="330" cy="60" r="80" fill="#F9B826" opacity=".12"/>
+    <path d="M-40 202 L120 -20 L190 -20 L30 202 Z" fill="url(#cb-shine)"/>
+  </g>
+  <rect x="1" y="1" width="318" height="200" rx="17" fill="none" stroke="#FFFFFF" stroke-opacity=".12" stroke-width="2"/>
+  <!-- puce -->
+  <rect x="30" y="62" width="50" height="38" rx="7" fill="url(#cb-chip)"/>
+  <g fill="none" stroke="#9A6A0A" stroke-width="1.6" stroke-linecap="round" opacity=".75">
+    <path d="M30 75 H46 M30 87 H46 M64 75 H80 M64 87 H80"/>
+    <path d="M46 62 V100 M64 62 V100"/>
+    <rect x="46" y="72" width="18" height="18" rx="3"/>
+  </g>
+  <!-- sans contact -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" opacity=".9">
+    <path d="M96 72 a14 14 0 0 1 0 18"/>
+    <path d="M104 66 a22 22 0 0 1 0 30"/>
+    <path d="M112 60 a30 30 0 0 1 0 42"/>
+  </g>
+  <!-- numéro masqué -->
+  <g fill="#FFFFFF" opacity=".92">
+    <g><circle cx="34" cy="135" r="4"/><circle cx="46" cy="135" r="4"/><circle cx="58" cy="135" r="4"/><circle cx="70" cy="135" r="4"/></g>
+    <g><circle cx="98" cy="135" r="4"/><circle cx="110" cy="135" r="4"/><circle cx="122" cy="135" r="4"/><circle cx="134" cy="135" r="4"/></g>
+    <g><circle cx="162" cy="135" r="4"/><circle cx="174" cy="135" r="4"/><circle cx="186" cy="135" r="4"/><circle cx="198" cy="135" r="4"/></g>
+  </g>
+  <g fill="#FFFFFF" opacity=".55">
+    <rect x="224" y="129" width="40" height="12" rx="6"/>
+    <rect x="30" y="162" width="96" height="10" rx="5"/>
+    <rect x="140" y="162" width="38" height="10" rx="5"/>
+  </g>
+  <!-- logo réseau générique -->
+  <rect x="236" y="154" width="58" height="28" rx="6" fill="#FFFFFF" opacity=".14"/>
+  <path d="M248 176 l7 -16 h5 l-7 16 Z M259 176 l7 -16 h5 l-7 16 Z M270 176 l7 -16 h5 l-7 16 Z" fill="#F9B826"/>
+</svg>

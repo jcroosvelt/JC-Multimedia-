@@ -1718,9 +1718,7 @@ async function initPaymentReturnPage(){
         <p class="card-sub">⏳ Le paiement n'a pas été confirmé (annulé, échoué, ou en cours). Vous pouvez réessayer ci-dessous.</p>
         <div class="form-field" style="margin-top:12px;">
           <label>Réessayer avec</label>
-          <button class="opt-btn" onclick="retryPayment('moncash')">MonCash</button>
-          <button class="opt-btn" onclick="retryPayment('natcash')">NatCash</button>
-          <button class="opt-btn" onclick="retryPayment('carte')">Carte bancaire</button>
+          ${PAY_METHODS.map(m => `<button class="opt-btn pay-opt" onclick="retryPayment('${m.method}')">${payOptInner(m)}</button>`).join('')}
         </div>
         <p id="retryStatus" class="card-sub" style="margin-top:8px;"></p>
       `;
@@ -1819,11 +1817,7 @@ function renderPayLink(){
     actions = `
       <div class="form-field" style="margin-top:16px;">
         <label>Payer avec</label>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn btn-primary" id="payLinkMoncash" onclick="payLinkPay('moncash')">MonCash</button>
-          <button class="btn btn-wa" id="payLinkNatcash" onclick="payLinkPay('natcash')">Natcash</button>
-          <button class="btn btn-ghost" id="payLinkCarte" onclick="payLinkPay('carte')">Carte bancaire</button>
-        </div>
+        ${PAY_METHODS.map(m => `<button class="opt-btn pay-opt" id="${m.id}" onclick="payLinkPay('${m.method}')">${payOptInner(m)}</button>`).join('')}
         <p class="card-sub" style="margin-top:6px;">Carte Visa / Mastercard : le montant est converti et débité en dollars US (USD).</p>
       </div>
       <p class="card-sub" id="payLinkStatus">Vous serez redirigé vers la page de paiement sécurisée, puis de retour sur notre site.</p>`;
@@ -1965,11 +1959,19 @@ function handleCustomizeFileChange(slot){
   orderFlow.uploadFiles[slot] = file;
   document.getElementById('cfile-preview-'+slot).innerHTML = `<span>${file.name.length>16 ? file.name.slice(0,14)+'…' : file.name}</span>`;
 }
+/* Logos des moyens de paiement (fichiers SVG dans /paiement). */
+const PAY_METHODS = [
+  { label:"MonCash",        method:"moncash", logo:"/paiement/moncash-bouton.svg", id:"payLinkMoncash" },
+  { label:"Natcash",        method:"natcash", logo:"/paiement/natcash.svg", id:"payLinkNatcash" },
+  { label:"Carte bancaire", method:"carte",   logo:"/paiement/carte.svg",   id:"payLinkCarte" }
+];
+function payOptInner(m){
+  return `<span class="pay-logo pay-logo-${m.method}"><img src="${m.logo}" alt="" width="64" height="40"></span><span class="pay-label">${m.label}</span>`;
+}
 function showStepPayment(){
-  const options = ["MonCash","Natcash","Carte bancaire"];
   openStep(`
     <h3>Quel est votre mode de paiement préféré ?</h3>
-    ${options.map(o => `<button class="opt-btn ${orderFlow.payment===o?'selected':''}" onclick="selectPayment('${o}')">${o}</button>`).join('')}
+    ${PAY_METHODS.map(m => `<button class="opt-btn pay-opt ${orderFlow.payment===m.label?'selected':''}" onclick="selectPayment('${m.label}')">${payOptInner(m)}</button>`).join('')}
     <p class="card-sub" style="margin-top:10px;">Vous serez redirigé vers une page sécurisée pour finaliser le paiement.${orderFlow.payment==='Carte bancaire' ? ' Par carte (Visa / Mastercard), le montant est converti et débité en dollars US (USD).' : ''}</p>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="showStepDelivery()">Retour</button>
