@@ -1512,7 +1512,7 @@ function runPendingConfirm(){
    ========================================================= */
 function startOrderFlow(){
   const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
-  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[], modelFiles:[], details:"", servicePhotoSlots:5 };
+  orderFlow = { customerName:"", customerPhone:"", customerAddress:"", customize:null, customizedItems:[], payment:null, delivery:null, idempotencyKey, uploadFiles:[], modelFiles:[], details:"", servicePhotoSlots:2 };
   showStepCustomerInfo();
 }
 function showStepCustomerInfo(){
@@ -1582,11 +1582,11 @@ function goPastCustomize(){
 
 /* =========================================================
    ÉTAPE DÉDIÉE AUX SERVICES — fichiers modèles (jusqu'à 2),
-   photos du client (5 minimum, extensible), description du projet.
+   photos du client (facultatives, extensible), description du projet.
    ========================================================= */
 const MAX_SERVICE_PHOTOS = 20;
 function renderServicePhotoSlots(){
-  return Array.from({length: orderFlow.servicePhotoSlots || 5}, (_, slot) => `
+  return Array.from({length: orderFlow.servicePhotoSlots || 2}, (_, slot) => `
     <div class="admin-image-slot">
       <div class="admin-image-preview" id="sphoto-preview-${slot}">${orderFlow.uploadFiles[slot] ? `<span>${orderFlow.uploadFiles[slot].name.slice(0,14)}</span>` : '<span>Aucun fichier</span>'}</div>
       <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" id="sphoto-${slot}" onchange="handleServicePhotoChange(${slot})">
@@ -1594,8 +1594,8 @@ function renderServicePhotoSlots(){
   `).join('');
 }
 function addServicePhotoSlot(){
-  if((orderFlow.servicePhotoSlots || 5) >= MAX_SERVICE_PHOTOS){ showToast("Maximum " + MAX_SERVICE_PHOTOS + " photos"); return; }
-  orderFlow.servicePhotoSlots = (orderFlow.servicePhotoSlots || 5) + 1;
+  if((orderFlow.servicePhotoSlots || 2) >= MAX_SERVICE_PHOTOS){ showToast("Maximum " + MAX_SERVICE_PHOTOS + " photos"); return; }
+  orderFlow.servicePhotoSlots = (orderFlow.servicePhotoSlots || 2) + 1;
   document.getElementById('servicePhotosRow').innerHTML = renderServicePhotoSlots();
 }
 function handleServicePhotoChange(slot){
@@ -1639,10 +1639,9 @@ function showStepServiceUploads(){
       </div>
     </div>
     <div class="form-field">
-      <label>Vos photos (minimum 5) — le contenu à utiliser pour votre projet</label>
+      <label>Vos photos — le contenu à utiliser pour votre projet, facultatif</label>
       <div class="admin-image-row" id="servicePhotosRow">${renderServicePhotoSlots()}</div>
       <button type="button" class="btn btn-ghost" style="margin-top:8px;" onclick="addServicePhotoSlot()">+ Ajouter une photo</button>
-      <p id="serviceUploadError" class="form-error" style="display:none;">Merci de joindre au moins 5 photos.</p>
     </div>
     <div class="form-field">
       <label>Décrivez votre projet</label>
@@ -1655,11 +1654,6 @@ function showStepServiceUploads(){
   `, "Votre projet");
 }
 function collectServiceUploads(){
-  const photoCount = orderFlow.uploadFiles.filter(Boolean).length;
-  if(photoCount < 5){
-    document.getElementById('serviceUploadError').style.display = 'block';
-    return;
-  }
   orderFlow.details = document.getElementById('serviceDescription').value.trim();
   showStepDelivery();
 }
