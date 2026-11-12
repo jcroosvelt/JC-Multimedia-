@@ -308,5 +308,32 @@ async function adminInstallApp(){
   document.getElementById('adminInstallBtn').style.display = 'none';
 }
 </script>
+<script>
+/* Notifications push (app Android JC Multimedia) :
+   l'application appelle window.onFcmToken(jeton) ; on l'enregistre dans
+   device_tokens quand l'admin est connecté. Sans effet dans un navigateur. */
+(function(){
+  let fcmToken = null;
+  async function saveToken(){
+    try{
+      if(!fcmToken || typeof db === 'undefined' || !db) return;
+      const { data } = await db.auth.getSession();
+      const user = data && data.session && data.session.user;
+      if(!user) return;
+      await db.from('device_tokens').upsert({ token: fcmToken, user_id: user.id }, { onConflict: 'token' });
+    }catch(e){ console.warn('device_tokens:', e); }
+  }
+  window.onFcmToken = function(token){ fcmToken = token; saveToken(); };
+  if(typeof db !== 'undefined' && db){
+    db.auth.onAuthStateChange(function(event){
+      if(event === 'SIGNED_IN'){
+        if(window.AppBridge) AppBridge.postMessage('getToken');
+        saveToken();
+      }
+    });
+  }
+  if(window.AppBridge) AppBridge.postMessage('getToken');
+})();
+</script>
 </body>
 </html>
