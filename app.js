@@ -4077,6 +4077,11 @@ async function renderAdminOrders(){
     ${orders.length === 0 ? '<p class="card-sub">Aucune commande enregistrée.</p>' : orders.map(orderRowHTML).join('')}
   `;
   if(typeof recuDecorateOrderButtons === 'function') recuDecorateOrderButtons();
+  /* Rappels push : l'admin a ouvert la liste, les commandes sont « vues ». */
+  if(SUPABASE_ENABLED && orders.some(o => o.id)){
+    db.from('orders').update({ vue_le: new Date().toISOString() }).is('vue_le', null)
+      .then(({ error }) => { if(error) console.warn('vue_le:', error); });
+  }
 }
 const ORDER_STATUSES = [
   'En attente','Confirmée','Paiement en attente','Paiement confirmé',
