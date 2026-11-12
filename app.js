@@ -2757,6 +2757,78 @@ async function adminAddSlide(){
   }
 }
 
+/* ---- Galerie de fichiers (visionneuse intégrée + téléchargement direct) ---- */
+let adminGalleryItems = [];
+const orderGalleries = {};
+function fileKind(name){
+  const ext = (String(name).split('.').pop() || '').toLowerCase();
+  if(['jpg','jpeg','png','gif','webp','bmp','svg','avif'].includes(ext)) return 'image';
+  if(ext === 'pdf') return 'pdf';
+  if(['mp4','webm','mov','m4v'].includes(ext)) return 'video';
+  if(['mp3','wav','ogg','m4a'].includes(ext)) return 'audio';
+  return 'other';
+}
+async function buildGalleryItem(f, expires){
+  try{
+    const name = f.original_filename || 'Fichier';
+    const bucket = db.storage.from('order-uploads');
+    const [view, dl] = await Promise.all([
+      bucket.createSignedUrl(f.storage_path, expires),
+      bucket.createSignedUrl(f.storage_path, expires, { download: name })
+    ]);
+    if(view.error || dl.error) return null;
+    return { url: view.data.signedUrl, dlUrl: dl.data.signedUrl, name, kind: fileKind(name), size: f.size_bytes || 0 };
+  }catch(e){ console.warn(e); return null; }
+}
+function galleryThumbHTML(item, idx, orderId){
+  const call = orderId != null ? `openFileGallery(orderGalleries[${Number(orderId)}], ${idx})` : `openFileGallery(adminGalleryItems, ${idx})`;
+  const inner = item.kind === 'image'
+    ? `<img src="${escapeHtml(item.url)}" alt="" loading="lazy">`
+    : `<span>${item.kind === 'pdf' ? '📄' : item.kind === 'video' ? '🎬' : item.kind === 'audio' ? '🎵' : '📎'}</span>`;
+  return `<button type="button" class="gal-thumb" onclick="${call}" aria-label="Voir ${escapeHtml(item.name)}">${inner}</button>`;
+}
+function openFileGallery(items, start){
+  if(!items || !items.length) return;
+  let i = start || 0;
+  document.getElementById('fileGallery')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'fileGallery';
+  ov.className = 'gal-overlay';
+  ov.innerHTML = `
+    <div class="gal-bar"><span class="gal-title"></span>
+      <a class="btn btn-amber gal-download" download>⬇ Télécharger</a>
+      <button type="button" class="gal-x" aria-label="Fermer">✕</button></div>
+    <div class="gal-stage"></div>
+    <button type="button" class="gal-nav gal-prev" aria-label="Précédent">‹</button>
+    <button type="button" class="gal-nav gal-next" aria-label="Suivant">›</button>`;
+  document.body.appendChild(ov);
+  const stage = ov.querySelector('.gal-stage');
+  function close(){ ov.remove(); document.removeEventListener('keydown', onKey); }
+  function show(){
+    const it = items[i];
+    ov.querySelector('.gal-title').textContent = `${it.name} (${i+1}/${items.length})`;
+    const dl = ov.querySelector('.gal-download');
+    dl.href = it.dlUrl; dl.setAttribute('download', it.name);
+    stage.innerHTML = '';
+    let node;
+    if(it.kind === 'image'){ node = document.createElement('img'); node.src = it.url; }
+    else if(it.kind === 'pdf'){ node = document.createElement('iframe'); node.src = it.url; }
+    else if(it.kind === 'video'){ node = document.createElement('video'); node.src = it.url; node.controls = true; }
+    else if(it.kind === 'audio'){ node = document.createElement('audio'); node.src = it.url; node.controls = true; }
+    else { node = document.createElement('p'); node.textContent = "Aperçu indisponible pour ce type de fichier — utilisez « Télécharger »."; }
+    stage.appendChild(node);
+    ov.querySelector('.gal-prev').style.display = ov.querySelector('.gal-next').style.display = items.length > 1 ? '' : 'none';
+  }
+  function go(d){ i = (i + d + items.length) % items.length; show(); }
+  function onKey(e){ if(e.key === 'Escape') close(); else if(e.key === 'ArrowLeft') go(-1); else if(e.key === 'ArrowRight') go(1); }
+  ov.querySelector('.gal-x').onclick = close;
+  ov.querySelector('.gal-prev').onclick = () => go(-1);
+  ov.querySelector('.gal-next').onclick = () => go(1);
+  stage.onclick = e => { if(e.target === stage) close(); };
+  document.addEventListener('keydown', onKey);
+  show();
+}
+
 /* ---- Fichiers reçus (toutes commandes confondues) ---- */
 async function renderAdminFiles(){
   const el = document.getElementById('adminTab-files');
@@ -2775,14 +2847,10 @@ async function renderAdminFiles(){
       return;
     }
     const cards = [];
+    adminGalleryItems = [];
     for(const f of data){
-      let url = null;
-      try{
-        // Lien valable 10 ans — autant dire permanent, tout en gardant
-        // le fichier hors d'accès public direct (bucket privé).
-        const { data: signed, error: signErr } = await db.storage.from('order-uploads').createSignedUrl(f.storage_path, 60*60*24*365*10);
-        if(!signErr) url = signed.signedUrl;
-      }catch(e){ console.warn(e); }
+      const item = await buildGalleryItem(f, 60*60*24*365*10);
+      const idx = item ? adminGalleryItems.push(item) - 1 : -1;
       const order = f.orders || {};
       cards.push(`
         <div class="admin-order-card" id="upload-${f.id}">
@@ -2793,9 +2861,13 @@ async function renderAdminFiles(){
           ${order.code ? `<div class="item-code-tag" style="margin:4px 0;">${escapeHtml(order.code)}</div>` : ''}
           <div class="card-sub">${escapeHtml(order.customer_phone)}</div>
           <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-            ${url ? `<a href="${url}" target="_blank" rel="noopener">📎 ${escapeHtml(f.original_filename) || 'Fichier'}</a>` : `<span class="card-sub">Lien indisponible</span>`}
+            ${item ? `${galleryThumbHTML(item, idx)}<span>📎 ${escapeHtml(f.original_filename) || 'Fichier'}</span>` : `<span class="card-sub">Fichier indisponible</span>`}
             <span class="card-sub">${Math.round((f.size_bytes||0)/1024)} Ko</span>
-            <button class="btn btn-ghost" style="margin-left:auto; padding:6px 12px; font-size:.8rem;" data-path="${escapeHtml(f.storage_path||'')}" onclick="adminDeleteUpload(${Number(f.id)}, this.dataset.path)">Supprimer</button>
+            <span style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
+              ${item ? `<button class="btn btn-ghost" style="padding:6px 12px; font-size:.8rem;" onclick="openFileGallery(adminGalleryItems, ${idx})">👁 Voir</button>
+              <a class="btn btn-ghost" style="padding:6px 12px; font-size:.8rem;" href="${escapeHtml(item.dlUrl)}" download="${escapeHtml(item.name)}">⬇ Télécharger</a>` : ''}
+              <button class="btn btn-ghost" style="padding:6px 12px; font-size:.8rem;" data-path="${escapeHtml(f.storage_path||'')}" onclick="adminDeleteUpload(${Number(f.id)}, this.dataset.path)">Supprimer</button>
+            </span>
           </div>
         </div>
       `);
@@ -4053,13 +4125,15 @@ async function adminViewOrderFiles(orderId, btnEl){
     const { data: files, error } = await db.from('order_uploads').select('*').eq('order_id', orderId);
     if(error) throw error;
     if(!files || files.length === 0){ container.innerHTML = '<p class="card-sub">Aucun fichier.</p>'; return; }
-    const links = [];
+    const items = [];
     for(const f of files){
-      const { data: signed, error: signErr } = await db.storage.from('order-uploads').createSignedUrl(f.storage_path, 3600);
-      if(signErr){ console.warn(signErr); continue; }
-      links.push(`<li><a href="${signed.signedUrl}" target="_blank" rel="noopener">${escapeHtml(f.original_filename || 'Fichier')}</a> <span class="card-sub">(${Math.round((f.size_bytes||0)/1024)} Ko, lien valable 1h)</span></li>`);
+      const item = await buildGalleryItem(f, 3600);
+      if(item) items.push(item);
     }
-    container.innerHTML = `<ul class="admin-list">${links.join('')}</ul>`;
+    orderGalleries[orderId] = items;
+    container.innerHTML = items.length
+      ? `<div class="gal-grid">${items.map((it, i) => `<div class="gal-cell">${galleryThumbHTML(it, i, orderId)}<div class="gal-name">${escapeHtml(it.name)}</div><a class="gal-dl" href="${escapeHtml(it.dlUrl)}" download="${escapeHtml(it.name)}">⬇ Télécharger</a></div>`).join('')}</div>`
+      : '<p class="card-sub">Fichiers indisponibles.</p>';
   }catch(e){
     container.innerHTML = '<p class="card-sub">Échec du chargement des fichiers.</p>';
     console.error(e);
