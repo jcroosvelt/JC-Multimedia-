@@ -224,8 +224,8 @@ header.site{
 }
 
 /* Grille des aperçus Boutique/Services sur l'accueil : 2 colonnes sur
-   mobile, 3 sur tablette, 5 sur ordinateur — indépendant de .grid pour
-   ne pas affecter les pages Boutique/Services elles-mêmes. */
+   mobile, 3 sur tablette, 5 sur ordinateur — utilisée aussi par les pages Boutique, Services et Promotions —
+   même disposition partout. */
 .grid-home{display:grid; grid-template-columns:repeat(2, 1fr); gap:14px;}
 @media(min-width:640px){ .grid-home{grid-template-columns:repeat(3, 1fr); gap:16px;} }
 @media(min-width:1100px){ .grid-home{grid-template-columns:repeat(5, 1fr); gap:18px;} }
