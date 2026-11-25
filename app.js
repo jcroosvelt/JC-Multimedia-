@@ -226,7 +226,7 @@ function showPortfolioDetail(id){
       ${p.category ? `<p class="item-code-tag" style="display:inline-block;">${escapeHtml(p.category)}</p>` : ''}
       ${p.client_name ? `<p class="card-sub">Client : ${escapeHtml(p.client_name)}</p>` : ''}
       ${p.description ? `<p class="card-sub" style="font-size:.92rem;">${escapeHtml(p.description).replace(/\n/g,'<br>')}</p>` : ''}
-      ${p.project_url ? `<a class="btn btn-ghost" href="${escapeHtml(p.project_url)}" target="_blank" rel="noopener">Voir le projet</a>` : ''}
+      ${p.project_url ? `<a class="btn btn-ghost" href="${escapeHtml(safeHref(p.project_url))}" target="_blank" rel="noopener">Voir le projet</a>` : ''}
     </div>
   `, title);
 }
@@ -411,7 +411,7 @@ function renderSlideshow(){
         <div class="slide-caption">
           ${s.title ? `<h2>${escapeHtml(s.title)}</h2>` : ''}
           ${s.subtitle ? `<p>${escapeHtml(s.subtitle)}</p>` : ''}
-          ${(s.button_text && s.button_url) ? `<a class="btn btn-primary" href="${escapeHtml(s.button_url)}">${escapeHtml(s.button_text)}</a>` : ''}
+          ${(s.button_text && s.button_url) ? `<a class="btn btn-primary" href="${escapeHtml(safeHref(s.button_url))}">${escapeHtml(s.button_text)}</a>` : ''}
         </div>` : ''}
     </div>`;
   }).join('');
@@ -609,6 +609,14 @@ function shuffleArray(arr){
 }
 function escapeHtml(s){
   return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+/* Liens saisis dans l'admin (boutons, projets) : on n'accepte que http(s),
+   mailto:, tel:, wa.me et les adresses du site. Tout le reste (javascript:,
+   data:…) est remplacé par « # » pour éviter l'exécution de code. */
+function safeHref(u){
+  const v = String(u == null ? '' : u).trim();
+  if(/^(https?:\/\/|mailto:|tel:|\/(?!\/)|#)/i.test(v)) return v;
+  return '#';
 }
 function renderSimpleContentInto(elId, rawText){
   const el = document.getElementById(elId);

@@ -1,0 +1,16 @@
+# Secrets et fichiers locaux : ne jamais les commiter
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+service-account*.json
+*-adminsdk-*.json
+*.bak
+*.sql.gz
+*.zip
+node_modules/
+.vercel/
+.DS_Store
